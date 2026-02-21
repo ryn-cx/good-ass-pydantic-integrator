@@ -18,6 +18,7 @@ from good_ass_pydantic_integrator.customizer import (
     CustomSerializer,
     GAPICustomizer,
     ReplacementField,
+    ReplacementType,
 )
 from good_ass_pydantic_integrator.gapi import GAPI
 
@@ -59,6 +60,11 @@ class {class_name}(BaseModel):
         return []
 
     @cached_property
+    def _replacement_types(self) -> list[ReplacementType]:
+        """Return replacement types to apply into generated models."""
+        return []
+
+    @cached_property
     def _custom_serializers(self) -> list[CustomSerializer]:
         """Return custom serializers to apply into generated models."""
         return []
@@ -77,6 +83,7 @@ class {class_name}(BaseModel):
         """Return a customizer from the configured fields, serializers, and imports."""
         customizer = GAPICustomizer()
         customizer.replacement_fields = self._replacement_fields
+        customizer.replacement_types = self._replacement_types
         customizer.custom_serializers = self._custom_serializers
         customizer.additional_imports = self._additional_imports
         return customizer

@@ -25,6 +25,32 @@ class ReplacementField:
 
 
 @dataclass
+class ReplacementType:
+    """Replace only the type annotation of an existing field.
+
+    Unlike ``ReplacementField`` which replaces the entire field definition, this
+    preserves the field name, alias, default value, and other attributes.
+
+    Attributes:
+        class_name: The name of the class containing the field.
+        field_name: The name of the field whose type to replace.
+        new_type: The new type annotation as a string, e.g. ``"int"``.
+    """
+
+    class_name: str
+    field_name: str
+    new_type: str
+
+    def generate_type_ast(self) -> ast.expr:
+        """Generate the replacement type as an AST expression node."""
+        stmt = ast.parse(f"x: {self.new_type}").body[0]
+        if not isinstance(stmt, ast.AnnAssign):  # pragma: no cover
+            msg = f"Failed to parse type annotation: {self.new_type!r}"
+            raise TypeError(msg)
+        return stmt.annotation
+
+
+@dataclass
 class CustomSerializer:
     """Custom serializers to be used with GAPICustomizer.
 
@@ -70,6 +96,7 @@ class GAPICustomizer:
     def __init__(self) -> None:
         """Initialize GAPICustomizer."""
         self.replacement_fields: list[ReplacementField] = []
+        self.replacement_types: list[ReplacementType] = []
         self.custom_serializers: list[CustomSerializer] = []
         self.additional_imports: list[str] = []
 
@@ -92,6 +119,29 @@ class GAPICustomizer:
             new_field=new_field,
         )
         self.replacement_fields.append(replacement_field)
+
+    def add_replacement_type(
+        self,
+        class_name: str,
+        field_name: str,
+        new_type: str,
+    ) -> None:
+        """Add a type replacement to apply during model generation.
+
+        Unlike ``add_replacement_field``, this only changes the type annotation
+        while preserving the field name, alias, default value, and other attributes.
+
+        Args:
+            class_name: The class containing the field.
+            field_name: The name of the field whose type to replace.
+            new_type: The new type annotation, e.g. ``"int"``.
+        """
+        replacement_type = ReplacementType(
+            class_name=class_name,
+            field_name=field_name,
+            new_type=new_type,
+        )
+        self.replacement_types.append(replacement_type)
 
     def add_custom_serializer(
         self,
@@ -147,6 +197,7 @@ class GAPICustomizer:
 
         self._replace_untyped_lists(class_nodes)
         self._apply_replacement_fields(class_nodes)
+        self._apply_replacement_types(class_nodes)
         self._apply_custom_serializers(class_nodes)
 
         additional_imports = list(self.additional_imports)
@@ -176,6 +227,28 @@ class GAPICustomizer:
                 msg = (
                     f"Field {replacement_field.field_name!r} not found in"
                     f" class {replacement_field.class_name!r}"
+                )
+                raise ValueError(msg)
+
+    def _apply_replacement_types(self, class_nodes: dict[str, ast.ClassDef]) -> None:
+        """Replace type annotations on matching fields in class bodies."""
+        for replacement_type in self.replacement_types:
+            class_node = class_nodes.get(replacement_type.class_name)
+            if not class_node:
+                msg = (
+                    f"Class {replacement_type.class_name!r} not found in"
+                    " generated models"
+                )
+                raise ValueError(msg)
+
+            for node in class_node.body:
+                if self._is_field_node(node, replacement_type.field_name):
+                    node.annotation = replacement_type.generate_type_ast()
+                    break
+            else:
+                msg = (
+                    f"Field {replacement_type.field_name!r} not found in"
+                    f" class {replacement_type.class_name!r}"
                 )
                 raise ValueError(msg)
 

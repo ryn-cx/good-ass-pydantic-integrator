@@ -101,6 +101,41 @@ class TestReplaceField:
         )
 
 
+class TestReplaceType:
+    """Test add_replacement_type."""
+
+    def test_add_replacement_type(self) -> None:
+        """Test replacing just the type annotation of a field."""
+        customizer = GAPICustomizer()
+        customizer.add_replacement_type(
+            class_name="Model",
+            field_name="integer_that_is_stored_as_a_string",
+            new_type="int",
+        )
+        gapi = GAPI(customizer=customizer)
+        gapi.add_object_from_dict({"integer_that_is_stored_as_a_string": "1"})
+        lines = gapi.get_pydantic_model_content().splitlines()
+        assert "    integer_that_is_stored_as_a_string: int" in lines
+
+    def test_add_replacement_type_preserves_alias(self) -> None:
+        """Test that replacing a type preserves the field alias."""
+        customizer = GAPICustomizer()
+        customizer.add_replacement_type(
+            class_name="Model",
+            field_name="integer_that_is_stored_as_a_string",
+            new_type="int",
+        )
+        gapi = GAPI(customizer=customizer)
+        gapi.add_object_from_dict({"IntegerThatIsStoredAsAString": "1"})
+        content = gapi.get_pydantic_model_content()
+        assert (
+            """    integer_that_is_stored_as_a_string: int = Field(
+        ..., alias="IntegerThatIsStoredAsAString"
+    )"""
+            in content
+        )
+
+
 class TestAddSerializers:
     """Test add_serializer."""
 
