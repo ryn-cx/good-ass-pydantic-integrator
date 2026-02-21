@@ -156,7 +156,7 @@ class GAPI:
         Args:
             folder_path: Path to the folder containing JSON files.
         """
-        for json_file in folder_path.glob("*.json"):
+        for json_file in sorted(folder_path.glob("*.json")):
             self.add_object_from_file(json_file)
 
     def add_object_from_file(self, file_path: Path) -> None:

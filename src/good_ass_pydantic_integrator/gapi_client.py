@@ -5,8 +5,8 @@ import inspect
 import json
 import re
 import sys
-import uuid
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from functools import cached_property
 from logging import getLogger
 from pathlib import Path
@@ -127,7 +127,7 @@ class {class_name}(BaseModel):
 
     def json_files(self) -> list[Path]:
         """Return all saved JSON files for the model."""
-        return list(self.json_files_folder.glob("*.json"))
+        return sorted(self.json_files_folder.glob("*.json"), key=lambda f: f.name)
 
     # endregion Computed properties
 
@@ -207,7 +207,10 @@ class {class_name}(BaseModel):
     def remove_redundant_json_files(self) -> None:
         """Remove JSON files that are redundant for schema generation."""
         logger.info("Checking for redundant JSON files: %s.", self._response_model_name)
-        input_files = list(self.json_files())
+        input_files = self.json_files()
+        # Check the newest files first so files should only change when actually
+        # required.
+        input_files.reverse()
 
         gapi = GAPI()
         for file in input_files:
@@ -296,7 +299,8 @@ class {class_name}(BaseModel):
 
     def _save_new_json_file(self, data: INPUT_TYPE) -> Path:
         """Save response data as a JSON file for future model rebuilds."""
-        json_path = self.json_files_folder / f"{uuid.uuid4()}.json"
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H_%M_%S.%f")[:-3]
+        json_path = self.json_files_folder / f"{timestamp}.json"
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(json.dumps(data, indent=2))
         logger.info("Saved JSON file: %s.", json_path)
