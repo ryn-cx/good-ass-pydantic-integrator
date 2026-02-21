@@ -1,0 +1,37 @@
+[project]
+name = "good-ass-pydantic-integrator"
+version = "0.0.1"
+description = "Utilities for integrating Pydantic models."
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [
+  { name = "ryn-cx", email = "262888154+ryn-cx@users.noreply.github.com" }
+]
+dependencies = [
+  "datamodel-code-generator>=0.54.0",
+  "degenson",
+  "pydantic>=2.12.5",
+  "ruff>=0.15.2",
+]
+
+[dependency-groups]
+dev = [
+  "prek>=0.3.3",
+  "pytest>=9.0.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff.lint]
+select = ["ALL"]  # Enable all linters.
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]  # Asserts should be allowed in tests.
+
+[tool.uv.sources]
+degenson = { git = "https://github.com/ryn-cx/DeGenSON" }
