@@ -75,7 +75,7 @@ def test_gapi(
         """Concrete implementation of GAPIClient for testing."""
 
         @cached_property
-        def _json_files_folder(self) -> Path:
+        def json_files_folder(self) -> Path:
             self._json_files_temp_dir = tempfile.TemporaryDirectory()
             return Path(self._json_files_temp_dir.name)
 
@@ -140,13 +140,9 @@ def test_remove_redundant_files() -> None:
         """Concrete implementation of GAPIClient for testing."""
 
         @cached_property
-        def _json_files_folder(self) -> Path:
+        def json_files_folder(self) -> Path:
             self._json_files_temp_dir = tempfile.TemporaryDirectory()
             return Path(self._json_files_temp_dir.name)
-
-        @cached_property
-        def json_files_folder(self) -> Path:
-            return self._json_files_folder
 
         @cached_property
         @override

@@ -120,13 +120,13 @@ class {class_name}(BaseModel):
         return self._response_models_path.parent / "_files"
 
     @cached_property
-    def _json_files_folder(self) -> Path:
+    def json_files_folder(self) -> Path:
         """Return the folder that contains all saved JSON files for the model."""
         return self._root_files_path / self._response_model_folder_name
 
     def json_files(self) -> list[Path]:
         """Return all saved JSON files for the model."""
-        return list(self._json_files_folder.glob("*.json"))
+        return list(self.json_files_folder.glob("*.json"))
 
     # endregion Computed properties
 
@@ -178,7 +178,7 @@ class {class_name}(BaseModel):
         """Rebuild the schema and model from all saved files."""
         client = GAPI(self._response_model_name, customizer=self._customizer)
         if any(self.json_files()):
-            client.add_objects_from_folder(self._json_files_folder)
+            client.add_objects_from_folder(self.json_files_folder)
             client.write_json_schema_to_file(self._schema_path)
             client.write_pydantic_model_to_file(self._response_models_path)
             self._create_init_file()
@@ -292,7 +292,7 @@ class {class_name}(BaseModel):
 
     def _save_new_json_file(self, data: INPUT_TYPE) -> Path:
         """Save response data as a JSON file for future model rebuilds."""
-        json_path = self._json_files_folder / f"{uuid.uuid4()}.json"
+        json_path = self.json_files_folder / f"{uuid.uuid4()}.json"
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(json.dumps(data, indent=2))
         return json_path
