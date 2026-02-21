@@ -28,10 +28,11 @@ if TYPE_CHECKING:
     from good_ass_pydantic_integrator.constants import INPUT_TYPE
 
 
+logger = getLogger(__name__)
+
+
 class GAPIClient[T: BaseModel](ABC):
     """Base class for API endpoints to auto-generate Pydantic models from responses."""
-
-    logger = getLogger(__name__)
 
     _BLANK_MODEL_TEMPLATE = """# ruff: noqa: D100, D101
 from __future__ import annotations
@@ -176,6 +177,7 @@ class {class_name}(BaseModel):
 
     def rebuild_models(self) -> None:
         """Rebuild the schema and model from all saved files."""
+        logger.info("Rebuilding model %s.", self._response_model_name)
         client = GAPI(self._response_model_name, customizer=self._customizer)
         if any(self.json_files()):
             client.add_objects_from_folder(self.json_files_folder)
@@ -193,6 +195,7 @@ class {class_name}(BaseModel):
         The schema file will be deleted, and the model will be overwritten with a
         template that contains no fields.
         """
+        logger.info("Writing blank model: %s.", self._response_model_name)
         content = self._BLANK_MODEL_TEMPLATE.format(
             class_name=self._response_model_name,
         )
@@ -203,6 +206,7 @@ class {class_name}(BaseModel):
 
     def remove_redundant_json_files(self) -> None:
         """Remove JSON files that are redundant for schema generation."""
+        logger.info("Checking for redundant JSON files: %s.", self._response_model_name)
         input_files = list(self.json_files())
 
         gapi = GAPI()
@@ -217,7 +221,7 @@ class {class_name}(BaseModel):
             for file in test_files:
                 gapi.add_object_from_file(file)
             if gapi.builder == complete_schema:
-                self.logger.info("Deleting Redundant File: %s", input_files[i].name)
+                logger.info("Deleting redundant JSON file: %s", input_files[i].name)
                 input_files[i].unlink()
                 input_files.pop(i)
             else:
@@ -241,8 +245,7 @@ class {class_name}(BaseModel):
         # If validation fails try automatically rebuilding and reloading the models
         # using the new data and see if validation will succeed with the updated models.
         except ValidationError:
-            self.logger.info("Updating model %s.", self._response_model_name)
-
+            logger.info("Validation failed: %s.", self._response_model_name)
             new_file = self._save_new_json_file(data)
             self._update_models(new_file)
 
@@ -266,6 +269,7 @@ class {class_name}(BaseModel):
         Args:
             new_file_path: Path to a JSON file containing the new data.
         """
+        logger.info("Updating model %s.", self._response_model_name)
         gapi = GAPI(self._response_model_name, customizer=self._customizer)
         if self._schema_path.exists():
             gapi.add_schema_from_file(self._schema_path)
@@ -295,6 +299,7 @@ class {class_name}(BaseModel):
         json_path = self.json_files_folder / f"{uuid.uuid4()}.json"
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(json.dumps(data, indent=2))
+        logger.info("Saved JSON file: %s.", json_path)
         return json_path
 
     def _save_debug_files(self, data: INPUT_TYPE, dumped: INPUT_TYPE) -> None:
@@ -304,6 +309,7 @@ class {class_name}(BaseModel):
         debug_path.mkdir(parents=True, exist_ok=True)
         (debug_path / "original.json").write_text(json.dumps(data, indent=2))
         (debug_path / "parsed.json").write_text(json.dumps(dumped, indent=2))
+        logger.info("Debug files saved to %s.", debug_path)
 
     def _create_init_file(self) -> None:
         """Create ``__init__.py`` in the models directory if it doesn't exist."""
