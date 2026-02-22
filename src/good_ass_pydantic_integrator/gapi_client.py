@@ -169,18 +169,12 @@ class GAPIClient[T: BaseModel]:
         Returns:
             The reloaded model class.
         """
-        model_name = cls._get_model_name()
-        model_path = cls._get_model_path()
-        schema_path = cls._get_schema_path()
-        json_folder = cls.json_files_folder()
-
-        logger.info("Rebuilding model %s.", model_name)
-        gapi = GAPI(model_name, customizer=cls._customizer())
-        json_files = sorted(json_folder.glob("*.json")) if json_folder.exists() else []
-        if json_files:
-            gapi.add_objects_from_folder(json_folder)
-            gapi.write_json_schema_to_file(schema_path)
-            gapi.write_pydantic_model_to_file(model_path)
+        if cls.json_files():
+            logger.info("Rebuilding model %s.", cls._get_model_name())
+            gapi = GAPI(cls._get_model_name(), customizer=cls._customizer())
+            gapi.add_objects_from_folder(cls.json_files_folder())
+            gapi.write_json_schema_to_file(cls._get_schema_path())
+            gapi.write_pydantic_model_to_file(cls._get_model_path())
             cls._create_init_file()
         else:
             cls.write_blank_model()
