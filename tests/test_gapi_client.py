@@ -2,9 +2,8 @@
 
 import json
 import tempfile
-from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import BaseModel
@@ -71,24 +70,21 @@ def test_gapi(
     # is generated.
     from tests.test_data.simple_gapi_model import SimpleGapiModel  # noqa: PLC0415
 
+    temp_dir = tempfile.TemporaryDirectory()
+
     class TestGapiClient(GAPIClient[SimpleGapiModel]):
         """Concrete implementation of GAPIClient for testing."""
 
-        @cached_property
-        def json_files_folder(self) -> Path:
-            self._json_files_temp_dir = tempfile.TemporaryDirectory()
-            return Path(self._json_files_temp_dir.name)
+        _response_model = SimpleGapiModel
 
-        @cached_property
-        @override
-        def _response_model(self) -> type[SimpleGapiModel]:
-            return SimpleGapiModel
+        @classmethod
+        def json_files_folder(cls) -> Path:
+            return Path(temp_dir.name)
 
-    client = TestGapiClient()
-    client.write_blank_model()
+    TestGapiClient.write_blank_model()
     if initial_data:
-        client.parse(initial_data)
-    client.parse(update_data)
+        TestGapiClient.parse(initial_data)
+    TestGapiClient.parse(update_data)
 
     model_path = Path(__file__).parent / "test_data" / "simple_gapi_model.py"
     model_text = model_path.read_text()
@@ -107,13 +103,9 @@ def test_write_blank_model() -> None:
     class TestGapiClient(GAPIClient[SimpleGapiModel]):
         """Concrete implementation of GAPIClient for testing."""
 
-        @cached_property
-        @override
-        def _response_model(self) -> type[SimpleGapiModel]:
-            return SimpleGapiModel
+        _response_model = SimpleGapiModel
 
-    client = TestGapiClient()
-    client.write_blank_model()
+    TestGapiClient.write_blank_model()
 
     model_path = Path(__file__).parent / "test_data" / f"{name}.py"
     schema_path = model_path.with_suffix(".json")
@@ -139,26 +131,33 @@ def test_remove_redundant_files() -> None:
     class TestGapiClient(GAPIClient[SimpleGapiModel]):
         """Concrete implementation of GAPIClient for testing."""
 
-        @cached_property
-        def json_files_folder(self) -> Path:
-            self._json_files_temp_dir = tempfile.TemporaryDirectory()
-            return Path(self._json_files_temp_dir.name)
+        _response_model = SimpleGapiModel
 
-        @cached_property
-        @override
-        def _response_model(self) -> type[SimpleGapiModel]:
-            return SimpleGapiModel
+    json_folder = TestGapiClient.json_files_folder()
+    json_folder.mkdir(parents=True, exist_ok=True)
 
-    client = TestGapiClient()
     number_of_files = 3
     for i in range(number_of_files):
-        file_path = client.json_files_folder / f"{i}.json"
+        file_path = json_folder / f"{i}.json"
         file_path.write_text(json.dumps(TEST_DATA))
 
-    client.remove_redundant_json_files()
+    try:
+        TestGapiClient.remove_redundant_json_files()
 
-    remaining_files = list(client.json_files_folder.glob("*.json"))
-    assert len(remaining_files) == 1
+        remaining_files = list(json_folder.glob("*.json"))
+        assert len(remaining_files) == 1
+    finally:
+        for f in json_folder.glob("*.json"):
+            f.unlink()
+        json_folder.rmdir()
+
+
+def test_invalid_response_model_raises() -> None:
+    """Test that __init_subclass__ rejects non-BaseModel _response_model."""
+    with pytest.raises(TypeError, match="_response_model must be a BaseModel subclass"):
+
+        class _BadClient(GAPIClient[BaseModel]):
+            _response_model = str  # type: ignore[assignment]
 
 
 class _TestModel(BaseModel):

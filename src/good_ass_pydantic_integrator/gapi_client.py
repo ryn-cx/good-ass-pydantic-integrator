@@ -5,15 +5,14 @@ import inspect
 import json
 import re
 import sys
-from abc import ABC, abstractmethod
 from datetime import UTC, datetime
-from functools import cached_property
 from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, overload
 
 from pydantic import BaseModel, ValidationError
 
+from good_ass_pydantic_integrator.constants import BLANK_MODEL_TEMPLATE
 from good_ass_pydantic_integrator.customizer import (
     CustomSerializer,
     GAPICustomizer,
@@ -31,107 +30,98 @@ if TYPE_CHECKING:
 logger = getLogger(__name__)
 
 
-class GAPIClient[T: BaseModel](ABC):
+class GAPIClient[T: BaseModel]:
     """Base class for API endpoints to auto-generate Pydantic models from responses."""
 
-    _BLANK_MODEL_TEMPLATE = """# ruff: noqa: D100, D101
-from __future__ import annotations
+    _response_model: type[T]
+    """The Pydantic model class for this client. Must be set by subclasses."""
 
-from pydantic import BaseModel, ConfigDict
-
-
-class {class_name}(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-"""
-
-    # region Abstract properties
-
-    @cached_property
-    @abstractmethod
-    def _response_model(self) -> type[T]:
-        """Return the Pydantic model class for this client."""
-
-    # endregion Abstract properties
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        """Validate that subclasses define _response_model correctly."""
+        super().__init_subclass__(**kwargs)
+        if "_response_model" in cls.__dict__:
+            model = cls.__dict__["_response_model"]
+            if not (isinstance(model, type) and issubclass(model, BaseModel)):
+                msg = (
+                    f"{cls.__name__}._response_model must be a BaseModel subclass, "
+                    f"got {model!r}"
+                )
+                raise TypeError(msg)
 
     # region Customizations
 
-    @cached_property
-    def _replacement_fields(self) -> list[ReplacementField]:
+    @classmethod
+    def _replacement_fields(cls) -> list[ReplacementField]:
         """Return field replacements for the generated model."""
         return []
 
-    @cached_property
-    def _replacement_types(self) -> list[ReplacementType]:
+    @classmethod
+    def _replacement_types(cls) -> list[ReplacementType]:
         """Return type replacements for the generated model."""
         return []
 
-    @cached_property
-    def _custom_serializers(self) -> list[CustomSerializer]:
+    @classmethod
+    def _custom_serializers(cls) -> list[CustomSerializer]:
         """Return custom serializers for the generated model."""
         return []
 
-    @cached_property
-    def _additional_imports(self) -> list[str]:
+    @classmethod
+    def _additional_imports(cls) -> list[str]:
         """Return additional import lines for the generated model."""
         return []
 
     # endregion Customizations
 
-    # region Computed properties
+    # region Derived paths
 
-    @cached_property
-    def _customizer(self) -> GAPICustomizer:
+    @classmethod
+    def _customizer(cls) -> GAPICustomizer:
         """Return a customizer from the configured fields, serializers, and imports."""
         customizer = GAPICustomizer()
-        customizer.replacement_fields = self._replacement_fields
-        customizer.replacement_types = self._replacement_types
-        customizer.custom_serializers = self._custom_serializers
-        customizer.additional_imports = self._additional_imports
+        customizer.replacement_fields = cls._replacement_fields()
+        customizer.replacement_types = cls._replacement_types()
+        customizer.custom_serializers = cls._custom_serializers()
+        customizer.additional_imports = cls._additional_imports()
         return customizer
 
-    @cached_property
-    def _response_model_name(self) -> str:
+    @classmethod
+    def _get_model_name(cls) -> str:
         """Return the name of the response model class."""
-        return self._response_model.__name__
+        return cls._response_model.__name__
 
-    @cached_property
-    def _response_model_folder_name(self) -> str:
-        """Return the response model class name to snake_case for the folder name."""
-        string = self._response_model_name
-        string = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", string)
+    @staticmethod
+    def _to_folder_name(model_name: str) -> str:
+        """Convert a model class name to snake_case for the folder name."""
+        string = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", model_name)
         string = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", string)
         return string.lower().removesuffix("_model")
 
-    @cached_property
-    def _response_model_path(self) -> Path:
-        """Return the path to the response model file."""
-        return Path(inspect.getfile(self._response_model))
+    @classmethod
+    def _get_model_path(cls) -> Path:
+        """Return the file path for the response model."""
+        return Path(inspect.getfile(cls._response_model))
 
-    @cached_property
-    def _schema_path(self) -> Path:
-        """Return the path to the JSON schema file for the response model."""
-        return self._response_model_path.with_suffix(".json")
+    @classmethod
+    def _get_schema_path(cls) -> Path:
+        """Return the JSON schema file path for the response model."""
+        return cls._get_model_path().with_suffix(".json")
 
-    @cached_property
-    def _root_files_path(self) -> Path:
-        """Return the path that contains the folders that contain JSON files.
-
-        This is the root file path for all models, this should not be model specific.
-        """
-        return self._response_model_path.parent / "_files"
-
-    @cached_property
-    def json_files_folder(self) -> Path:
+    @classmethod
+    def json_files_folder(cls) -> Path:
         """Return the folder that contains all saved JSON files for the model."""
-        return self._root_files_path / self._response_model_folder_name
+        model_path = cls._get_model_path()
+        folder_name = cls._to_folder_name(cls._get_model_name())
+        return model_path.parent / "_files" / folder_name
 
-    def json_files(self) -> list[Path]:
-        """Return all saved JSON files for the model."""
-        return sorted(self.json_files_folder.glob("*.json"), key=lambda f: f.name)
+    @classmethod
+    def json_files(cls) -> list[Path]:
+        """Return all saved JSON files for the model, sorted by name."""
+        folder = cls.json_files_folder()
+        return sorted(folder.glob("*.json"), key=lambda f: f.name)
 
-    # endregion Computed properties
+    # endregion Derived paths
 
-    # region Static methods
+    # region Public methods
 
     @overload
     @staticmethod
@@ -156,11 +146,8 @@ class {class_name}(BaseModel):
 
         return [GAPIClient.dump_response(item) for item in data]
 
-    # endregion Static methods
-
-    # region Public methods
-
-    def parse(self, data: INPUT_TYPE, *, update_model: bool = True) -> T:
+    @classmethod
+    def parse(cls, data: INPUT_TYPE, *, update_model: bool = True) -> T:
         """Parses data into a model.
 
         Args:
@@ -171,45 +158,59 @@ class {class_name}(BaseModel):
             A model instance containing the parsed data.
         """
         if update_model:
-            return self._parse_and_validate(data)
+            return cls._parse_and_validate(data)
 
-        return self._response_model.model_validate(data)
+        return cls._response_model.model_validate(data)
 
-    def rebuild_model(self) -> None:
-        """Rebuild the schema and model from all saved files."""
-        logger.info("Rebuilding model %s.", self._response_model_name)
-        client = GAPI(self._response_model_name, customizer=self._customizer)
-        if any(self.json_files()):
-            client.add_objects_from_folder(self.json_files_folder)
-            client.write_json_schema_to_file(self._schema_path)
-            client.write_pydantic_model_to_file(self._response_model_path)
-            self._create_init_file()
+    @classmethod
+    def rebuild_model(cls) -> None:
+        """Rebuild the schema and model from all saved files.
+
+        Returns:
+            The reloaded model class.
+        """
+        model_name = cls._get_model_name()
+        model_path = cls._get_model_path()
+        schema_path = cls._get_schema_path()
+        json_folder = cls.json_files_folder()
+
+        logger.info("Rebuilding model %s.", model_name)
+        gapi = GAPI(model_name, customizer=cls._customizer())
+        json_files = sorted(json_folder.glob("*.json")) if json_folder.exists() else []
+        if json_files:
+            gapi.add_objects_from_folder(json_folder)
+            gapi.write_json_schema_to_file(schema_path)
+            gapi.write_pydantic_model_to_file(model_path)
+            cls._create_init_file()
         else:
-            self.write_blank_model()
+            cls.write_blank_model()
 
-        self._response_model = self._reload_model()
+        cls._reload_model()
 
-    def write_blank_model(self) -> None:
+    @classmethod
+    def write_blank_model(cls) -> None:
         """Replace the existing model and schema with blank template files.
 
         The schema file will be deleted, and the model will be overwritten with a
         template that contains no fields.
-        """
-        logger.info("Writing blank model: %s.", self._response_model_name)
-        content = self._BLANK_MODEL_TEMPLATE.format(
-            class_name=self._response_model_name,
-        )
-        self._response_model_path.write_text(content)
-        if self._schema_path.exists():
-            self._schema_path.unlink()
-        self._response_model = self._reload_model()
 
-    def remove_redundant_json_files(self) -> None:
+        Returns:
+            The reloaded model class.
+        """
+        logger.info("Writing blank model: %s.", cls._get_model_name())
+        content = BLANK_MODEL_TEMPLATE.format(class_name=cls._get_model_name())
+        cls._get_model_path().write_text(content)
+        if cls._get_schema_path().exists():
+            cls._get_schema_path().unlink()
+        cls._reload_model()
+
+    @classmethod
+    def remove_redundant_json_files(cls) -> None:
         """Remove JSON files that are redundant for schema generation."""
-        logger.info("Checking for redundant JSON files: %s.", self._response_model_name)
-        input_files = self.json_files()
+        logger.info("Checking for redundant JSON files: %s.", cls._get_model_name())
         # Check the newest files first so files should only change when actually
         # required.
+        input_files = cls.json_files()
         input_files.reverse()
 
         gapi = GAPI()
@@ -234,7 +235,8 @@ class {class_name}(BaseModel):
 
     # region Private methods
 
-    def _parse_and_validate(self, data: INPUT_TYPE) -> T:
+    @classmethod
+    def _parse_and_validate(cls, data: INPUT_TYPE) -> T:
         """Validate data against the response model, auto-updating on failure.
 
         Args:
@@ -244,50 +246,53 @@ class {class_name}(BaseModel):
             The validated model instance.
         """
         try:
-            parsed = self._response_model.model_validate(data)
+            parsed = cls._response_model.model_validate(data)
         # If validation fails try automatically rebuilding and reloading the model
         # using the new data and see if validation will succeed with the updated model.
         except ValidationError:
-            logger.info("Validation failed: %s.", self._response_model_name)
-            new_file = self._save_new_json_file(data)
-            self._update_model(new_file)
+            logger.info("Validation failed: %s.", cls._get_model_name())
+            new_file = cls._save_new_json_file(data)
+            cls._update_model(new_file)
 
             # If validation fails a second time this will raise an error that must be
             # handled manually.
-            parsed = self._response_model.model_validate(data)
+            parsed = cls._response_model.model_validate(data)
 
         # If the dumped response does not match the original input then there is an
         # issue with the parsing or dumping logic that needs to be manually fixed.
-        dumped = self.dump_response(parsed)
+        dumped = cls.dump_response(parsed)
         if dumped != data:
-            self._save_debug_files(data, dumped)
+            cls._save_debug_files(data, dumped)
             msg = "Parsed response does not match original response."
             raise ValueError(msg)
 
         return parsed
 
-    def _update_model(self, new_file_path: Path) -> None:
+    @classmethod
+    def _update_model(cls, new_file_path: Path) -> None:
         """Update the schema and model with new data.
 
         Args:
             new_file_path: Path to a JSON file containing the new data.
         """
-        logger.info("Updating model %s.", self._response_model_name)
-        gapi = GAPI(self._response_model_name, customizer=self._customizer)
-        if self._schema_path.exists():
-            gapi.add_schema_from_file(self._schema_path)
+        logger.info("Updating model %s.", cls._get_model_name())
+        gapi = GAPI(cls._get_model_name(), customizer=cls._customizer())
+        if cls._get_schema_path().exists():
+            gapi.add_schema_from_file(cls._get_schema_path())
         gapi.add_object_from_file(new_file_path)
-        gapi.write_json_schema_to_file(self._schema_path)
-        gapi.write_pydantic_model_to_file(self._response_model_path)
-        self._response_model = self._reload_model()
+        gapi.write_json_schema_to_file(cls._get_schema_path())
+        gapi.write_pydantic_model_to_file(cls._get_model_path())
+        cls._reload_model()
 
-    def _reload_model(self) -> type[T]:
-        """Reload a model by reimporting it.
+    @classmethod
+    def _reload_model(cls) -> None:
+        """Reload the response model by reimporting its module.
 
         Returns:
             The reloaded model class.
         """
-        module = sys.modules[self._response_model.__module__]
+        response_model = cls._response_model
+        module = sys.modules[response_model.__module__]
 
         if hasattr(module, "__cached__") and module.__cached__:
             cached_path = Path(module.__cached__)
@@ -295,30 +300,35 @@ class {class_name}(BaseModel):
                 cached_path.unlink()
 
         reloaded_module = importlib.reload(module)
-        return getattr(reloaded_module, self._response_model_name)
+        cls._response_model = getattr(reloaded_module, response_model.__name__)
 
-    def _save_new_json_file(self, data: INPUT_TYPE) -> Path:
+    @classmethod
+    def _save_new_json_file(cls, data: INPUT_TYPE) -> Path:
         """Save response data as a JSON file for future model rebuilds."""
         timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H_%M_%S.%f")[:-3]
-        json_path = self.json_files_folder / f"{timestamp}.json"
+        json_path = cls.json_files_folder() / f"{timestamp}.json"
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(json.dumps(data, indent=2))
         logger.info("Saved JSON file: %s.", json_path)
         return json_path
 
-    def _save_debug_files(self, data: INPUT_TYPE, dumped: INPUT_TYPE) -> None:
+    @classmethod
+    def _save_debug_files(cls, data: INPUT_TYPE, dumped: INPUT_TYPE) -> None:
         """Save original and parsed data for debugging round-trip mismatches."""
-        self._save_new_json_file(data)
-        debug_path = self._root_files_path / "_temp" / self._response_model_folder_name
+        cls._save_new_json_file(data)
+        folder_name = cls._to_folder_name(cls._get_model_name())
+        debug_path = cls._get_model_path().parent / "_files" / "_temp" / folder_name
         debug_path.mkdir(parents=True, exist_ok=True)
         (debug_path / "original.json").write_text(json.dumps(data, indent=2))
         (debug_path / "parsed.json").write_text(json.dumps(dumped, indent=2))
         logger.info("Debug files saved to %s.", debug_path)
 
-    def _create_init_file(self) -> None:
+    @classmethod
+    def _create_init_file(cls) -> None:
         """Create ``__init__.py`` in the model directory if it doesn't exist."""
-        init_path = self._response_model_path.parent / "__init__.py"
+        model_path = cls._get_model_path()
+        init_path = model_path.parent / "__init__.py"
         if not init_path.exists():
-            init_path.write_text(f'"""Models for {self._response_model_name}."""')
+            init_path.write_text(f'"""Models for {cls._get_model_name()}."""')
 
     # endregion Private methods
