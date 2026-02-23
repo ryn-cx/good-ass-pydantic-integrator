@@ -57,7 +57,6 @@ class CustomSerializer:
     Attributes:
         field_name: The name of the field to serialize.
         serializer_code: The serializer body as a string or list of lines.
-        input_type: Type annotation for the ``value`` parameter.
         output_type: The return type annotation.
         class_name: The class to add the serializer to. If None, applies to all
             classes with the matching field.
@@ -65,12 +64,15 @@ class CustomSerializer:
 
     field_name: str
     serializer_code: str | list[str]
-    input_type: str = field(kw_only=True)
     output_type: str = field(kw_only=True)
     class_name: str | None = field(default=None, kw_only=True)
 
-    def create_serializer_ast(self) -> list[ast.stmt]:
+    def create_serializer_ast(self, input_type: str) -> list[ast.stmt]:
         """Generate the ``@field_serializer`` decorated method as AST nodes.
+
+        Args:
+            input_type: The type annotation for the ``value`` parameter,
+                derived from the existing field.
 
         Returns:
             The serializer method as a list of AST statement nodes.
@@ -82,7 +84,7 @@ class CustomSerializer:
         source = (
             f'@field_serializer("{self.field_name}")\n'
             f"def serialize_{self.field_name}"
-            f"(self, value: {self.input_type})"
+            f"(self, value: {input_type})"
             f" -> {self.output_type}:\n"
             "    "
             f"{'\n    '.join(serializer_code)}"
@@ -147,7 +149,6 @@ class GAPICustomizer:
         self,
         field_name: str,
         serializer_code: str | list[str],
-        input_type: str,
         output_type: str,
         class_name: str | None = None,
     ) -> None:
@@ -157,16 +158,14 @@ class GAPICustomizer:
             field_name: The field to add the serializer to.
             serializer_code: The serializer body as a string or list of lines.
                 Indentation is not required.
+            output_type: Return type annotation for the serializer.
             class_name: The class to add the serializer to. If None, applies to
                 all classes with the matching field.
-            input_type: Type annotation for the ``value`` parameter.
-            output_type: Return type annotation for the serializer.
         """
         custom_serializer = CustomSerializer(
             class_name=class_name,
             field_name=field_name,
             serializer_code=serializer_code,
-            input_type=input_type,
             output_type=output_type,
         )
         self.custom_serializers.append(custom_serializer)
@@ -258,18 +257,24 @@ class GAPICustomizer:
             return
 
         for custom_serializer in self.custom_serializers:
-            serializer_ast = custom_serializer.create_serializer_ast()
+            field_name = custom_serializer.field_name
             # If a class_name is defined only add the serializer to that class.
             if class_name := custom_serializer.class_name:
                 if class_name not in class_nodes:
                     msg = f"Class {class_name!r} not found in generated models"
                     raise ValueError(msg)
+                input_type = self._get_field_type(class_nodes[class_name], field_name)
+                serializer_ast = custom_serializer.create_serializer_ast(input_type)
                 class_nodes[class_name].body.extend(serializer_ast)
             # If a class_name is not defined add the serializer to all classes that have
             # a matching field name.
             else:
                 for class_node in class_nodes.values():
-                    if self._has_field(class_node, custom_serializer.field_name):
+                    if self._has_field(class_node, field_name):
+                        input_type = self._get_field_type(class_node, field_name)
+                        serializer_ast = custom_serializer.create_serializer_ast(
+                            input_type,
+                        )
                         class_node.body.extend(serializer_ast)
 
     @staticmethod
@@ -320,6 +325,15 @@ class GAPICustomizer:
             and isinstance(node.target, ast.Name)
             and node.target.id == field_name
         )
+
+    @staticmethod
+    def _get_field_type(class_node: ast.ClassDef, field_name: str) -> str:
+        """Return the type annotation string for a field in a class AST node."""
+        for node in class_node.body:
+            if GAPICustomizer._is_field_node(node, field_name):
+                return ast.unparse(node.annotation)
+        msg = f"Field {field_name!r} not found in class {class_node.name!r}"
+        raise ValueError(msg)
 
     @staticmethod
     def _has_field(class_node: ast.ClassDef, field_name: str) -> bool:

@@ -145,7 +145,6 @@ class TestAddSerializers:
         customizer.add_custom_serializer(
             field_name="string",
             serializer_code="return output",
-            input_type="str",
             output_type="str",
         )
         gapi = GAPI(customizer=customizer)
@@ -164,13 +163,11 @@ class TestAddSerializers:
         customizer.add_custom_serializer(
             field_name="string",
             serializer_code="return output",
-            input_type="str",
             output_type="str",
         )
         customizer.add_custom_serializer(
             field_name="string2",
             serializer_code="return output",
-            input_type="str",
             output_type="str",
         )
         gapi = GAPI(customizer=customizer)
@@ -206,7 +203,6 @@ class TestAddSerializers:
         customizer.add_custom_serializer(
             field_name="string",
             serializer_code=serializer_code,
-            input_type="str",
             output_type="str",
             class_name="Model",
         )
@@ -227,7 +223,6 @@ class TestAddSerializers:
         customizer.add_custom_serializer(
             field_name="string",
             serializer_code="return",
-            input_type="str",
             output_type="str",
         )
         gapi = GAPI(customizer=customizer)
