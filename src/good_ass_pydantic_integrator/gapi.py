@@ -35,21 +35,7 @@ def build_ruff_noqa_line() -> str:
     Returns:
         A noqa comment line containing all ruff rule codes.
     """
-    _confirm_uv_exists()
-
-    result = subprocess.run(
-        ["uv", "run", "ruff", "rule", "--all", "--output-format", "json"],  # noqa: S607
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-
-    all_ruff_codes = tuple(rule["code"] for rule in json.loads(result.stdout))
-
-    bad_codes = {"INP001", "RUF100"}
-    codes = [code for code in all_ruff_codes if code not in bad_codes]
-    return "# ruff: noqa: " + ", ".join(codes) + "\n"
+    return "# ruff: noqa: D100, D101, D102\n"
 
 
 def format_with_ruff(content: str) -> str:
@@ -64,7 +50,17 @@ def format_with_ruff(content: str) -> str:
     _confirm_uv_exists()
 
     check_result = subprocess.run(
-        ["uv", "run", "ruff", "check", "--fix", "--stdin-filename", "temp.py", "-"],  # noqa: S607
+        [  # noqa: S607
+            "uv",
+            "run",
+            "ruff",
+            "check",
+            "--fix",
+            "--stdin-filename",
+            "temp.py",
+            "-",
+            "--unsafe-fixes",
+        ],
         input=content,
         text=True,
         capture_output=True,

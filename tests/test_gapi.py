@@ -95,7 +95,8 @@ class TestReplaceField:
         content = gapi.get_pydantic_model_content()
         assert (
             """    integer_that_is_stored_as_a_string: int = Field(
-        ..., alias="IntegerThatIsStoredAsAString"
+        ...,
+        alias="IntegerThatIsStoredAsAString",
     )"""
             in content
         )
@@ -130,7 +131,8 @@ class TestReplaceType:
         content = gapi.get_pydantic_model_content()
         assert (
             """    integer_that_is_stored_as_a_string: int = Field(
-        ..., alias="IntegerThatIsStoredAsAString"
+        ...,
+        alias="IntegerThatIsStoredAsAString",
     )"""
             in content
         )
@@ -212,8 +214,7 @@ class TestAddSerializers:
         assert (
             """    @field_serializer("string")
     def serialize_string(self, value: str) -> str:
-        output = value
-        return output"""
+        return value"""
             in content
         )
 

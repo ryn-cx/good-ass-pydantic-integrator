@@ -1,11 +1,14 @@
-# ruff: noqa: COM812, TC003, D100, D101
+# ruff: noqa: D100, D101
 from __future__ import annotations
 
-from datetime import date, time, timedelta
-from ipaddress import IPv4Address, IPv6Address
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from datetime import date, time, timedelta
+    from ipaddress import IPv4Address, IPv6Address
+    from uuid import UUID
 
 
 class FieldDict(BaseModel):
@@ -29,6 +32,7 @@ class Model(BaseModel):
     field_list: list[AwareDatetime] = Field(..., alias="_list")
     field_dict: FieldDict = Field(..., alias="_dict")
     field_name_that_is_long_with_multiple_lines: str = Field(
-        ..., alias="FieldNameThatIsLongWithMultipleLines"
+        ...,
+        alias="FieldNameThatIsLongWithMultipleLines",
     )
     mixed_numbers: list[int | float]
