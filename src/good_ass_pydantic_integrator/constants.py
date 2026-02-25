@@ -22,8 +22,6 @@ type MAIN_TYPE = (
 type INPUT_TYPE = dict[str, MAIN_TYPE] | list[MAIN_TYPE]
 
 BLANK_MODEL_TEMPLATE = """# ruff: noqa: D100, D101
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict
 
 

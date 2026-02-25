@@ -110,8 +110,6 @@ def test_write_blank_model() -> None:
     model_path = Path(__file__).parent / "test_data" / f"{name}.py"
     schema_path = model_path.with_suffix(".json")
     expected_output = """# ruff: noqa: D100, D101
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict
 
 

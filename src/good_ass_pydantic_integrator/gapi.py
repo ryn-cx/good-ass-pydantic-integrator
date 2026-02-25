@@ -1,7 +1,5 @@
 """GAPI core schema generation and Pydantic model code generation."""
 
-from __future__ import annotations
-
 import json
 import shutil
 import subprocess
@@ -238,6 +236,7 @@ class GAPI:
                 target_python_version=datamodel_code_generator.PythonVersion.PY_313,
                 output_datetime_class=datamodel_code_generator.DatetimeClassType.Awaredatetime,
                 formatters=[Formatter.RUFF_FORMAT, Formatter.RUFF_CHECK],
+                disable_future_imports=True,
             )
 
             content = temp_path.read_text()
