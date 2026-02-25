@@ -206,7 +206,7 @@ class GAPI:
             output_path: Path to write the JSON schema file to.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(self.get_json_schema_content())
+        output_path.write_text(self.get_json_schema_content() + "\n")
 
     def get_pydantic_model_content(self) -> str:
         """Generate the Pydantic model code as a string, caching the result.

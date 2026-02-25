@@ -337,7 +337,7 @@ class TestWriteToFile:
         gapi.add_object_from_dict({"key": "value"})
         output = tmp_path / "output" / "schema.json"
         gapi.write_json_schema_to_file(output)
-        assert output.read_text() == gapi.get_json_schema_content()
+        assert output.read_text() == gapi.get_json_schema_content() + "\n"
 
     def test_write_pydantic_model_to_file(self, tmp_path: Path) -> None:
         """Test writing Pydantic model to a file."""
