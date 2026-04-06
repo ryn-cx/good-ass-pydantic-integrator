@@ -2,11 +2,11 @@
 
 import ipaddress
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 
 type MAIN_TYPE = (
-    INPUT_TYPE
-    | datetime
+    datetime
     | date
     | time
     | timedelta
@@ -19,9 +19,11 @@ type MAIN_TYPE = (
     | bool
     | None
 )
-type INPUT_TYPE = dict[str, MAIN_TYPE] | list[MAIN_TYPE]
+type INPUT_TYPE = Mapping[str, INPUT_TYPE] | Sequence[INPUT_TYPE]
 
 BLANK_MODEL_TEMPLATE = """# ruff: noqa: D100, D101
+from __future__ import annotations
+
 from pydantic import BaseModel, ConfigDict
 
 
