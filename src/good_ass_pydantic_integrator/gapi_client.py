@@ -257,7 +257,7 @@ class GAPIClient[T: BaseModel]:
         dumped = cls.dump_response(parsed)
         if dumped != data:
             cls._save_debug_files(data, dumped)
-            msg = "Parsed response does not match original response."
+            msg = f"Parsed {cls._get_model_name()} response does not match original response."
             raise ValueError(msg)
 
         return parsed
