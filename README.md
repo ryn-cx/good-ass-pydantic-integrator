@@ -2,14 +2,13 @@
 
 Utilities for integrating Pydantic models. GAPI generates Pydantic v2 models from
 raw JSON data (or JSON schemas), lets you customize the result, and provides a
-base client that automatically regenerates models when an API response no longer
-fits the schema.
+base client that automatically regenerates models when the schema changes.
 
 ## Features
 
 - Build a JSON schema from one or many JSON samples and emit a Pydantic v2 model.
 - Auto-detect strings that are really `datetime`, `date`, `time`, `timedelta`,
-  `IPv4Address`, `IPv6Address`, or `UUID`.
+  `IPv4Address`, `IPv6Address`, `UUID`, etc.
 - Customize generated models with field replacements, type replacements, custom
   `@field_serializer` methods, and extra imports.
 - `GAPIClient` base class that validates responses, rebuilds the model on
