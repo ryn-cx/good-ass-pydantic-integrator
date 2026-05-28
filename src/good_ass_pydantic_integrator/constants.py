@@ -19,7 +19,8 @@ type MAIN_TYPE = (
     | bool
     | None
 )
-type INPUT_TYPE = Mapping[str, INPUT_TYPE] | Sequence[INPUT_TYPE]
+type JSON_VALUE = MAIN_TYPE | Mapping[str, JSON_VALUE] | Sequence[JSON_VALUE]
+type INPUT_TYPE = Mapping[str, JSON_VALUE] | Sequence[JSON_VALUE]
 
 BLANK_MODEL_TEMPLATE = """# ruff: noqa: D100, D101
 from __future__ import annotations
