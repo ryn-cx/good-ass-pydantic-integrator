@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, cast
 from pydantic import TypeAdapter
 
 if TYPE_CHECKING:
-    from good_ass_pydantic_integrator.constants import INPUT_TYPE, MAIN_TYPE
+    from good_ass_pydantic_integrator.constants import INPUT_TYPE, JSON_VALUE, MAIN_TYPE
 
 
 # All types supported by genson's string format inference except re.pattern because
@@ -46,7 +46,7 @@ def convert_value(input_string: str) -> MAIN_TYPE:
     return input_string
 
 
-def _convert_single_value(value: MAIN_TYPE) -> MAIN_TYPE:
+def _convert_single_value(value: JSON_VALUE) -> JSON_VALUE:
     """Convert a single value to a more specific type if possible.
 
     Args:

@@ -77,6 +77,19 @@ class TestReplaceField:
         lines = gapi.get_pydantic_model_content().splitlines()
         assert "    integer_that_is_stored_as_a_string: int" in lines
 
+    def test_add_replacement_field_without_field_name_prefix(self) -> None:
+        """Test passing a new_field that omits the ``field_name:`` prefix."""
+        customizer = GAPICustomizer()
+        customizer.add_replacement_field(
+            class_name="Model",
+            field_name="integer_that_is_stored_as_a_string",
+            new_field="int",
+        )
+        gapi = GAPI(customizer=customizer)
+        gapi.add_object_from_dict({"integer_that_is_stored_as_a_string": "1"})
+        lines = gapi.get_pydantic_model_content().splitlines()
+        assert "    integer_that_is_stored_as_a_string: int" in lines
+
     def test_add_replacement_field_over_multiple_lines(self) -> None:
         """Test applying a replacement field that spans multiple lines."""
         customizer = GAPICustomizer()

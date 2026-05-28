@@ -12,7 +12,10 @@ class ReplacementField:
     Attributes:
         class_name: The name of the class containing the field to replace.
         field_name: The name of the existing field to replace.
-        new_field: The new field definition as a string, e.g. ``"field_name: int"``.
+        new_field: The new field definition as a string. Either a full annotated
+            assignment like ``"my_field: int = Field(...)"`` or just the
+            annotation portion like ``"int = Field(...)"`` — in the latter case
+            ``field_name`` is prepended automatically.
     """
 
     class_name: str
@@ -21,7 +24,10 @@ class ReplacementField:
 
     def generate_field_ast(self) -> list[ast.stmt]:
         """Generate the replacement field as a list of AST statement nodes."""
-        return ast.parse(self.new_field).body
+        body = ast.parse(self.new_field).body
+        if body and isinstance(body[0], ast.AnnAssign):
+            return body
+        return ast.parse(f"{self.field_name}: {self.new_field}").body
 
 
 @dataclass
@@ -113,7 +119,10 @@ class GAPICustomizer:
         Args:
             class_name: The class containing the field to replace.
             field_name: The name of the field to replace.
-            new_field: The new field definition, e.g. ``"my_field: int"``.
+            new_field: The new field definition. Either a full annotated
+                assignment like ``"field: int"`` or just the annotation
+                portion like ``"int = Field(...)"`` — in the latter case
+                ``field_name`` is prepended automatically.
         """
         replacement_field = ReplacementField(
             class_name=class_name,
