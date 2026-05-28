@@ -19,13 +19,6 @@ if TYPE_CHECKING:
     from good_ass_pydantic_integrator.constants import INPUT_TYPE
 
 
-def _confirm_uv_exists() -> None:
-    """Raise FileNotFoundError if uv is not installed."""
-    if not shutil.which("uv"):
-        msg = "uv was not found"
-        raise FileNotFoundError(msg)
-
-
 @cache
 def build_ruff_noqa_line() -> str:
     """Build a ``# ruff: noqa:`` line for all ruff rule codes.
@@ -45,7 +38,9 @@ def format_with_ruff(content: str) -> str:
     Returns:
         The formatted Python source code.
     """
-    _confirm_uv_exists()
+    if not shutil.which("uv"):
+        msg = "uv was not found"
+        raise FileNotFoundError(msg)
 
     check_result = subprocess.run(
         [  # noqa: S607
