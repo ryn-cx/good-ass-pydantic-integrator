@@ -136,7 +136,7 @@ class GAPIClient[T: BaseModel]:
         """Return the folder that contains all saved JSON files for the model."""
         model_path = cls._model_path()
         folder_name = cls._folder_name(cls._model_name())
-        return model_path.parent / "_files" / folder_name
+        return model_path.parent.parent / "_files" / folder_name
 
     @classmethod
     def json_files(cls) -> list[Path]:
