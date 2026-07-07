@@ -1,7 +1,8 @@
+<!-- TODO: This README is trash -->
 # Good Ass Pydantic Integrator (GAPI)
 
-GAPI is a python library that generates Pydantic v2 models from raw JSON data (or JSON
-schemas), lets you customize the result, and provides a base client that automatically
+GAPI is a python library that generates Pydantic v2 based models from raw JSON data (or
+JSON schemas), lets you customize the result, and provides a client that automatically
 regenerates models when the schema changes.
 
 ## Features

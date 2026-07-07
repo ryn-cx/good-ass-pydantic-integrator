@@ -155,7 +155,7 @@ def test_remove_redundant_files() -> None:
 
 def test_invalid_response_model_raises() -> None:
     """Test that __init_subclass__ rejects non-GAPIBaseModel _response_model."""
-    match = "_response_model must be a GAPIBaseModel subclass"
+    match = "_response_model must be a GAPIBaseModel or RootModel subclass"
     with pytest.raises(TypeError, match=match):
 
         class _BadClient(GAPIClient[GAPIBaseModel]):
@@ -214,3 +214,26 @@ class TestDumpResponse:
         parsed = TestGapiClient.parse(data)
 
         assert TestGapiClient.dump(parsed) is data
+
+    def test_dump_root_list_model(self) -> None:
+        """A root model built from a top-level list dumps back the input list."""
+        from tests.test_data.simple_gapi_model import SimpleGapiModel  # noqa: PLC0415
+
+        temp_dir = tempfile.TemporaryDirectory()
+
+        class TestGapiClient(GAPIClient[SimpleGapiModel]):
+            """Concrete implementation of GAPIClient for testing."""
+
+            _response_model = SimpleGapiModel
+
+            @classmethod
+            def json_files_folder(cls) -> Path:
+                return Path(temp_dir.name)
+
+        TestGapiClient.write_blank_model()
+        # A top-level JSON list makes the generated root model a RootModel, which
+        # records no raw input itself; dump rebuilds it from the wrapped items.
+        data: list[dict[str, int]] = [{"id": 1}, {"id": 2}]
+        parsed = TestGapiClient.parse(data)
+
+        assert TestGapiClient.dump(parsed) == data

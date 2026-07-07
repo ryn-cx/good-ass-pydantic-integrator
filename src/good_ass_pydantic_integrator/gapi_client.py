@@ -5,12 +5,13 @@ import inspect
 import json
 import re
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
-from pydantic import ValidationError
+from pydantic import BaseModel, RootModel, ValidationError
 
 from good_ass_pydantic_integrator.base_model import GAPIBaseModel
 from good_ass_pydantic_integrator.constants import BLANK_MODEL_TEMPLATE
@@ -23,9 +24,7 @@ from good_ass_pydantic_integrator.customizer import (
 from good_ass_pydantic_integrator.gapi import GAPI
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from good_ass_pydantic_integrator.constants import INPUT_TYPE
+    from good_ass_pydantic_integrator.constants import INPUT_TYPE, JSON_VALUE
 
 
 logger = getLogger(__name__)
@@ -35,7 +34,28 @@ _GAPI_MODEL_BASE_CLASS = f"good_ass_pydantic_integrator.{GAPIBaseModel.__qualnam
 root, not the ``base_model`` submodule), so they carry raw input."""
 
 
-class GAPIClient[T: GAPIBaseModel]:
+def _recover_raw_input(value: object) -> JSON_VALUE:
+    """Recover the raw input a model (or container of models) was built from.
+
+    Object models are :class:`GAPIBaseModel` and record their raw input
+    directly. A root model (e.g. a top-level JSON list) is a ``RootModel`` that
+    records nothing itself, so its raw input is rebuilt from the models it wraps.
+    Plain JSON values pass through unchanged.
+    """
+    if isinstance(value, RootModel):
+        # reportUnknownMemberType - RootModel.root is the unparametrized generic.
+        root = cast("object", value.root)  # type: ignore[reportUnknownMemberType]
+        return _recover_raw_input(root)
+    if isinstance(value, GAPIBaseModel):
+        return value.raw_input
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Sequence):
+        return [_recover_raw_input(item) for item in cast("Sequence[object]", value)]
+    return cast("JSON_VALUE", value)
+
+
+class GAPIClient[T: BaseModel]:
     """Base class for API endpoints to auto-generate Pydantic models from responses."""
 
     _response_model: type[T]
@@ -46,10 +66,16 @@ class GAPIClient[T: GAPIBaseModel]:
         super().__init_subclass__(**kwargs)
         if "_response_model" in cls.__dict__:
             model = cls.__dict__["_response_model"]
-            if not (isinstance(model, type) and issubclass(model, GAPIBaseModel)):
+            # A response model is either an object model (GAPIBaseModel, which
+            # records raw input) or a root model (RootModel, e.g. a top-level
+            # list, whose raw input is recovered from the models it wraps).
+            if not (
+                isinstance(model, type)
+                and issubclass(model, (GAPIBaseModel, RootModel))
+            ):
                 msg = (
-                    f"{cls.__name__}._response_model must be a GAPIBaseModel subclass, "
-                    f"got {model!r}"
+                    f"{cls.__name__}._response_model must be a GAPIBaseModel or "
+                    f"RootModel subclass, got {model!r}"
                 )
                 raise TypeError(msg)
 
@@ -120,15 +146,18 @@ class GAPIClient[T: GAPIBaseModel]:
 
     @overload
     @staticmethod
-    def dump(data: Sequence[GAPIBaseModel]) -> list[INPUT_TYPE]: ...
+    def dump(data: Sequence[BaseModel]) -> list[INPUT_TYPE]: ...
     @overload
     @staticmethod
-    def dump(data: GAPIBaseModel) -> INPUT_TYPE: ...
+    def dump(data: BaseModel) -> INPUT_TYPE: ...
     @staticmethod
     def dump(
-        data: GAPIBaseModel | Sequence[GAPIBaseModel],
+        data: BaseModel | Sequence[BaseModel],
     ) -> INPUT_TYPE | list[INPUT_TYPE]:
         """Return the input used to create a model.
+
+        Handles a single model, a sequence of models, and a root model (e.g. a
+        top-level JSON list), recovering the exact raw input in each case.
 
         Args:
             data: A model instance or sequence of model instances to serialize.
@@ -137,13 +166,10 @@ class GAPIClient[T: GAPIBaseModel]:
             The raw input, or a list of raw inputs for a sequence.
 
         Raises:
-            ValueError: If the model has no recorded raw input (i.e. it was
-                built via ``model_construct`` rather than validated).
+            ValueError: If a model has no recorded raw input (i.e. it was built
+                via ``model_construct`` rather than validated).
         """
-        if isinstance(data, GAPIBaseModel):
-            return data.raw_input
-
-        return [GAPIClient.dump(item) for item in data]
+        return cast("INPUT_TYPE | list[INPUT_TYPE]", _recover_raw_input(data))
 
     @classmethod
     def parse(cls, data: INPUT_TYPE, *, update_model: bool = True) -> T:
