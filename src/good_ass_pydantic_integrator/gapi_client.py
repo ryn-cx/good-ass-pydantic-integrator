@@ -191,7 +191,7 @@ class GAPIClient[T: BaseModel]:
             if not update_model:
                 raise
             logger.info("Validation failed: %s.", cls._model_name())
-            new_file = cls._save_new_json_file(data)
+            new_file = cls.save_new_json_file(data)
             cls._update_model(new_file)
             return cls._response_model.model_validate(data)
 
@@ -301,7 +301,7 @@ class GAPIClient[T: BaseModel]:
         cls._response_model = getattr(reloaded_module, response_model.__name__)
 
     @classmethod
-    def _save_new_json_file(cls, data: INPUT_TYPE) -> Path:
+    def save_new_json_file(cls, data: INPUT_TYPE) -> Path:
         """Save response data as a JSON file for future model rebuilds."""
         timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H_%M_%S.%f")[:-3]
         json_path = cls.json_files_folder() / f"{timestamp}.json"
