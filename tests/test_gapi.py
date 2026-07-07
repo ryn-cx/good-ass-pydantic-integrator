@@ -1,7 +1,8 @@
+# TODO: Validate
 """Test GAPI."""
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -299,6 +300,26 @@ class TestClassName:
         lines = gapi.get_pydantic_model_content().splitlines()
         assert "class CustomModel(BaseModel):" in lines
         assert "class Model(BaseModel):" not in lines
+
+
+class TestRuntimeAnnotationImports:
+    """Test that annotation-type imports stay at runtime, not under TYPE_CHECKING."""
+
+    def test_uuid_field_builds_and_validates(self) -> None:
+        """A UUID-typed model imports UUID at runtime and validates without rebuild."""
+        sample = {"x_api_key": "3e4666bf-d5e5-4aa7-b8ce-cefe41c7568a"}
+        gapi = GAPI(class_name="SearchModel")
+        gapi.add_object_from_dict(sample)
+        content = gapi.get_pydantic_model_content()
+
+        assert "from uuid import UUID" in content
+        assert "TYPE_CHECKING" not in content
+
+        # Exec the generated module and validate a sample. This fails with
+        # PydanticUserError if UUID was relocated under TYPE_CHECKING.
+        namespace: dict[str, Any] = {}
+        exec(content, namespace)  # noqa: S102
+        namespace["SearchModel"].model_validate(sample)
 
 
 class TestFalseConvertFlag:

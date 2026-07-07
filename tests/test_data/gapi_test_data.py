@@ -1,12 +1,9 @@
-# ruff: noqa: D100, D101
-from typing import TYPE_CHECKING
+# ruff: noqa: D100, D101, D102, TC001, TC002, TC003
+from datetime import date, time, timedelta
+from ipaddress import IPv4Address, IPv6Address
+from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
-
-if TYPE_CHECKING:
-    from datetime import date, time, timedelta
-    from ipaddress import IPv4Address, IPv6Address
-    from uuid import UUID
 
 
 class FieldDict(BaseModel):

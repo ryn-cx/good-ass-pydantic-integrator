@@ -1,3 +1,4 @@
+# TODO: Validate
 """GAPI core schema generation and Pydantic model code generation."""
 
 import json
@@ -21,16 +22,21 @@ if TYPE_CHECKING:
 
 @cache
 def build_ruff_noqa_line() -> str:
-    """Build a ``# ruff: noqa:`` line for all ruff rule codes.
+    """Return the ``# ruff: noqa`` line prepended to generated models.
 
-    Returns:
-        A noqa comment line containing all ruff rule codes.
+    TC001/TC002/TC003 keep a consumer's ruff from moving annotation imports
+    under ``TYPE_CHECKING``, which breaks pydantic at runtime.
     """
-    return "# ruff: noqa: D100, D101, D102\n"
+    return "# ruff: noqa: D100, D101, D102, TC001, TC002, TC003\n"
 
 
 def format_with_ruff(content: str) -> str:
-    """Format Python code by running ``uv run ruff``.
+    """Lint-fix and format generated code with ruff.
+
+    Both passes run ``--isolated`` so the consuming project's ruff config can't
+    apply fixes we don't want, and TC001/TC002/TC003 are ignored so annotation
+    imports are never moved under ``TYPE_CHECKING`` (which breaks pydantic at
+    runtime for models with ``UUID``/``date``/... fields).
 
     Args:
         content: The Python source code to format.
@@ -48,11 +54,16 @@ def format_with_ruff(content: str) -> str:
             "run",
             "ruff",
             "check",
+            "--isolated",
+            "--select",
+            "ALL",
+            "--ignore",
+            "TC001,TC002,TC003,RUF100",
             "--fix",
+            "--unsafe-fixes",
             "--stdin-filename",
             "temp.py",
             "-",
-            "--unsafe-fixes",
         ],
         input=content,
         text=True,
@@ -66,7 +77,16 @@ def format_with_ruff(content: str) -> str:
         raise RuntimeError(msg)
 
     format_result = subprocess.run(
-        ["uv", "run", "ruff", "format", "--stdin-filename", "temp.py", "-"],  # noqa: S607
+        [  # noqa: S607
+            "uv",
+            "run",
+            "ruff",
+            "format",
+            "--isolated",
+            "--stdin-filename",
+            "temp.py",
+            "-",
+        ],
         input=check_result.stdout,
         text=True,
         capture_output=True,

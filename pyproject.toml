@@ -24,6 +24,10 @@ dev = [
 requires = ["uv_build>=0.9.18,<0.10.0"]
 build-backend = "uv_build"
 
+[tool.ruff]
+# Generated model fixtures keep annotation imports at runtime; don't lint them.
+extend-exclude = ["tests/test_data"]
+
 [tool.ruff.lint]
 select = ["ALL"]  # Enable all linters.
 
