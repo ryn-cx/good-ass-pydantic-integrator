@@ -1,4 +1,4 @@
-"""Constants used throughout Good Ass Pydantic Integrator."""
+"""Good Ass Pydantic Integrator constants ."""
 
 import ipaddress
 import uuid
@@ -23,11 +23,10 @@ type JSON_VALUE = MAIN_TYPE | Mapping[str, JSON_VALUE] | Sequence[JSON_VALUE]
 type INPUT_TYPE = Mapping[str, JSON_VALUE] | Sequence[JSON_VALUE]
 
 BLANK_MODEL_TEMPLATE = """# ruff: noqa: D100, D101
-from __future__ import annotations
+from good_ass_pydantic_integrator import GAPIBaseModel
+from pydantic import ConfigDict
 
-from pydantic import BaseModel, ConfigDict
 
-
-class {class_name}(BaseModel):
+class {class_name}(GAPIBaseModel):
     model_config = ConfigDict(extra="forbid")
 """

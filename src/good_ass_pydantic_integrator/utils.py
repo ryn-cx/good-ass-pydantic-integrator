@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 def response_models(package: ModuleType) -> list[type[GAPIClient[Any]]]:
-    """Returns a list of all of the response models for DivingBoard."""
+    """Returns a list of all of the response models for a given package."""
     for info in pkgutil.walk_packages(
         package.__path__,
         package.__name__ + ".",

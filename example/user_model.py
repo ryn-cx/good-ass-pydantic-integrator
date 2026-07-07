@@ -1,6 +1,8 @@
 # ruff: noqa: D100, D101
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
+
+from good_ass_pydantic_integrator import GAPIBaseModel
 
 
-class UserModel(BaseModel):
+class UserModel(GAPIBaseModel):
     model_config = ConfigDict(extra="forbid")

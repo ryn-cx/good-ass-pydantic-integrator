@@ -12,7 +12,8 @@ regenerates models when the schema changes.
 - Customize generated models with field replacements, type replacements, custom
   `@field_serializer` methods, and extra imports.
 - `GAPIClient` base class that validates responses, rebuilds the model on
-  validation failure, and round-trip checks the parsed output.
+  validation failure, and caches the raw input so responses dump back exactly
+  as they came in.
 
 ## Installation
 
@@ -199,6 +200,12 @@ class User(BaseModel):
 `GAPIClient` is a generic base class for creating an automatically updating Pydantic
 model.
 
+Models generated for a `GAPIClient` inherit from `GAPIBaseModel` (a `BaseModel`
+subclass) instead of `pydantic.BaseModel`. `GAPIBaseModel` records the raw input it
+was validated from and exposes it as `model.raw_input`, which is how
+`dump_response` returns the untouched original response — pydantic itself does
+not retain the raw input once a model is built.
+
 A runnable example is available in the [`example/`](example/) directory:
 
 | File                                             | Purpose                                                                                                                                  |
@@ -213,7 +220,8 @@ A runnable example is available in the [`example/`](example/) directory:
 # Validate a response and upate model if necessary.
 user = UserClient.parse(response)
 
-# Serialize one or many model instances back to JSON-compatible data.
+# Return one or many models' raw input exactly as it was parsed. Only models
+# produced by parse() can be dumped.
 UserClient.dump_response(user)
 UserClient.dump_response([user, user])
 

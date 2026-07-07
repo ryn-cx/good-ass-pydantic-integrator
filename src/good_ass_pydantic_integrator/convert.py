@@ -1,4 +1,4 @@
-"""Functions to automatically convert string values to more specific types."""
+"""Functions to convert string values to more specific types."""
 
 import contextlib
 import ipaddress
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from good_ass_pydantic_integrator.constants import INPUT_TYPE, JSON_VALUE, MAIN_TYPE
 
 
-# All types supported by genson's string format inference except re.pattern because
+# All types supported by degenson's string format inference except re.pattern because
 # there is no way to determine if a string is a regular expression or a string.
 GENSON_STRING_TYPES: list[type] = [
     datetime,

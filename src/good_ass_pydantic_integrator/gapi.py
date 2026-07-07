@@ -91,6 +91,7 @@ class GAPI:
         builder: SchemaBuilder | None = None,
         customizer: GAPICustomizer | None = None,
         convert: bool = True,
+        base_class: str = "",
     ) -> None:
         """Initialize GAPI.
 
@@ -99,12 +100,15 @@ class GAPI:
             builder: Pre-configured SchemaBuilder instance to build upon.
             customizer: Customizer for post-generation field/serializer/import changes.
             convert: Auto-detect and convert date/datetime/timedelta strings.
+            base_class: Dotted path to the base class generated models inherit
+                from. Defaults to ``pydantic.BaseModel``.
         """
         self.convert = convert
         self.builder = builder or SchemaBuilder()
         self._customizer = customizer or GAPICustomizer()
 
         self.class_name = class_name
+        self.base_class = base_class
 
         self.cached_json_schema: str | None = None
         self.cached_pydantic_model: str | None = None
@@ -225,6 +229,7 @@ class GAPI:
                 class_name=self.class_name,
                 input_file_type=datamodel_code_generator.InputFileType.JsonSchema,
                 output_model_type=datamodel_code_generator.DataModelType.PydanticV2BaseModel,
+                base_class=self.base_class,
                 snake_case_field=True,
                 disable_timestamp=True,
                 extra_fields="forbid",
