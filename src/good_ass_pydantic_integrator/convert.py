@@ -24,7 +24,6 @@ GENSON_STRING_TYPES: list[type] = [
     uuid.UUID,
 ]
 
-
 def convert_value(input_string: str) -> MAIN_TYPE:
     """Convert a string to a more specific type if possible.
 
@@ -40,7 +39,10 @@ def convert_value(input_string: str) -> MAIN_TYPE:
         with contextlib.suppress(ValueError):
             adapter = cast("TypeAdapter[MAIN_TYPE]", TypeAdapter(target_type))
             parsed = adapter.validate_python(input_string)
-            if adapter.dump_python(parsed, mode="json") == input_string:
+            expected = input_string
+            if isinstance(parsed, datetime):
+                expected = expected.replace(".000Z", "Z")
+            if adapter.dump_python(parsed, mode="json") == expected:
                 return parsed
 
     return input_string

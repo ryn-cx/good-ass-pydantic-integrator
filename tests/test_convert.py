@@ -16,6 +16,7 @@ CONVERSION_CASES = [
     ("2018-11-13T20:20:39+08:00", datetime),
     ("2018-11-13T20:20:39Z", datetime),
     ("2018-11-13T20:20:39", datetime),
+    ("2018-11-13T20:20:39.000Z", datetime),
     ("2018-11-13", date),
     ("20:20:39", time),
     ("P3D", timedelta),
