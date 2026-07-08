@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from freezegun import freeze_time
 
 from good_ass_pydantic_integrator.convert import convert_input_data, convert_value
 
@@ -37,6 +38,18 @@ class TestConvertValue:
     def test_convert_value(self, *, input_data: str, expected_type: type) -> None:
         """Test converting a single value."""
         assert type(convert_value(input_data)) is expected_type
+
+    def test_convert_value_under_freeze_time(self) -> None:
+        """Datetime inference must still work inside a freezegun context.
+
+        freezegun's freeze_time patches datetime.datetime to FakeDatetime in module
+        namespaces it can reach. If the inference type list captured the real datetime
+        class at module scope, TypeAdapter(<real datetime>) would raise
+        PydanticSchemaGenerationError and datetimes would silently fall through to str.
+        """
+        with freeze_time("2026-07-08"):
+            result = convert_value("2020-11-27T08:00:00.000Z")
+        assert isinstance(result, datetime)
 
 
 class TestConvertInputData:

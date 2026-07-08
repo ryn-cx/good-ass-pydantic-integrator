@@ -1,1 +1,1 @@
-{"$schema": "http://json-schema.org/schema#", "type": "object", "properties": {"created_at": {"type": "string", "format": "date-time"}}, "required": ["created_at"]}
+{"$schema": "http://json-schema.org/schema#", "type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}}
