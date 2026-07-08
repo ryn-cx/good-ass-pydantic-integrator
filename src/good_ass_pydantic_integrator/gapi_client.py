@@ -14,7 +14,10 @@ from typing import TYPE_CHECKING, cast, overload
 
 from pydantic import BaseModel, RootModel, ValidationError
 
-from good_ass_pydantic_integrator.base_model import GAPIBaseModel
+from good_ass_pydantic_integrator.base_model import (
+    MODIFIER_CONTEXT_KEY,
+    GAPIBaseModel,
+)
 from good_ass_pydantic_integrator.constants import BLANK_MODEL_TEMPLATE
 from good_ass_pydantic_integrator.customizer import (
     CustomSerializer,
@@ -79,6 +82,29 @@ class GAPIClient[T: BaseModel]:
                     f"RootModel subclass, got {model!r}"
                 )
                 raise TypeError(msg)
+
+    @classmethod
+    def modify_data(cls, data: INPUT_TYPE) -> INPUT_TYPE:
+        """Transform raw input before validation and before model generation.
+
+        The default is a no-op. Override in a subclass to reshape the raw
+        downloaded data (e.g. denormalize an Apollo cache into per-type lists)
+        without changing what is stored on disk: the saved JSON corpus stays
+        exactly as downloaded, and this hook runs on the way into both
+        ``parse`` and model rebuilding, so the two never drift apart.
+
+        Args:
+            data: The raw JSON data, as downloaded/saved.
+
+        Returns:
+            The transformed data to validate and to build the schema from.
+        """
+        return data
+
+    @classmethod
+    def _modified_object_from_file(cls, file_path: Path) -> INPUT_TYPE:
+        """Load a saved raw JSON file and apply ``modify_data`` to it."""
+        return cls.modify_data(json.loads(file_path.read_text()))
 
     @classmethod
     def _replacement_fields(cls) -> list[ReplacementField]:
@@ -184,7 +210,10 @@ class GAPIClient[T: BaseModel]:
             A model instance containing the parsed data.
         """
         try:
-            return cls._response_model.model_validate(data)
+            return cls._response_model.model_validate(
+                data,
+                context={MODIFIER_CONTEXT_KEY: cls.modify_data},
+            )
         # If validation fails and updating is allowed, try automatically rebuilding
         # and reloading the model using the new data, then validate again. A second
         # failure raises an error that must be handled manually.
@@ -194,7 +223,10 @@ class GAPIClient[T: BaseModel]:
             logger.info("Validation failed: %s.", cls._model_name())
             new_file = cls.save_new_json_file(data)
             cls._update_model(new_file)
-            return cls._response_model.model_validate(data)
+            return cls._response_model.model_validate(
+                data,
+                context={MODIFIER_CONTEXT_KEY: cls.modify_data},
+            )
 
     @classmethod
     def rebuild_model(cls) -> None:
@@ -210,7 +242,8 @@ class GAPIClient[T: BaseModel]:
                 customizer=cls._customizer(),
                 base_class=_GAPI_MODEL_BASE_CLASS,
             )
-            gapi.add_objects_from_folder(cls.json_files_folder())
+            for json_file in cls.json_files():
+                gapi.add_object_from_dict(cls._modified_object_from_file(json_file))
             gapi.write_json_schema_to_file(cls._schema_path())
             gapi.write_pydantic_model_to_file(cls._model_path())
             cls._create_init_file()
@@ -247,7 +280,7 @@ class GAPIClient[T: BaseModel]:
 
         gapi = GAPI()
         for file in input_files:
-            gapi.add_object_from_file(file)
+            gapi.add_object_from_dict(cls._modified_object_from_file(file))
         complete_schema = gapi.builder
 
         i = 0
@@ -255,7 +288,7 @@ class GAPIClient[T: BaseModel]:
             test_files = input_files[:i] + input_files[i + 1 :]
             gapi = GAPI()
             for file in test_files:
-                gapi.add_object_from_file(file)
+                gapi.add_object_from_dict(cls._modified_object_from_file(file))
             if gapi.builder == complete_schema:
                 logger.info("Deleting redundant JSON file: %s", input_files[i].name)
                 input_files[i].unlink()
@@ -278,7 +311,7 @@ class GAPIClient[T: BaseModel]:
         )
         if cls._schema_path().exists():
             gapi.add_schema_from_file(cls._schema_path())
-        gapi.add_object_from_file(new_file_path)
+        gapi.add_object_from_dict(cls._modified_object_from_file(new_file_path))
         gapi.write_json_schema_to_file(cls._schema_path())
         gapi.write_pydantic_model_to_file(cls._model_path())
         cls._reload_model()
