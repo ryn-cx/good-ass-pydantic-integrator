@@ -173,21 +173,24 @@ class GAPIClient[T: BaseModel]:
 
     @overload
     @staticmethod
-    def dump(data: Sequence[BaseModel]) -> list[INPUT_TYPE]: ...
+    def original_input(data: Sequence[BaseModel]) -> list[INPUT_TYPE]: ...
     @overload
     @staticmethod
-    def dump(data: BaseModel) -> INPUT_TYPE: ...
+    def original_input(data: BaseModel) -> INPUT_TYPE: ...
     @staticmethod
-    def dump(
+    def original_input(
         data: BaseModel | Sequence[BaseModel],
     ) -> INPUT_TYPE | list[INPUT_TYPE]:
-        """Return the input used to create a model.
+        """Return the exact input a model was created from.
 
         Handles a single model, a sequence of models, and a root model (e.g. a
-        top-level JSON list), recovering the exact raw input in each case.
+        top-level JSON list), recovering the exact raw input in each case. The
+        result is verbatim what was validated, so round-tripping preserves details
+        that re-serialization would lose (e.g. a datetime's original ``Z`` suffix).
+        Use ``model_dump`` instead to get the model's own serialized shape.
 
         Args:
-            data: A model instance or sequence of model instances to serialize.
+            data: A model instance or sequence of model instances.
 
         Returns:
             The raw input, or a list of raw inputs for a sequence.
@@ -197,6 +200,37 @@ class GAPIClient[T: BaseModel]:
                 via ``model_construct`` rather than validated).
         """
         return cast("INPUT_TYPE | list[INPUT_TYPE]", _recover_raw_input(data))
+
+    @overload
+    @staticmethod
+    def model_dump(data: Sequence[BaseModel]) -> list[INPUT_TYPE]: ...
+    @overload
+    @staticmethod
+    def model_dump(data: BaseModel) -> INPUT_TYPE: ...
+    @staticmethod
+    def model_dump(
+        data: BaseModel | Sequence[BaseModel],
+    ) -> INPUT_TYPE | list[INPUT_TYPE]:
+        """Serialize a model to a JSON-compatible structure via Pydantic.
+
+        Unlike ``original_input``, which returns the exact validated input, this
+        reflects the model's current field values, re-serialized by Pydantic. Uses
+        ``mode="json"`` for JSON-compatible values, ``by_alias=True`` so field
+        aliases match the source shape, and ``exclude_unset=True`` to omit fields
+        that were never set.
+
+        Args:
+            data: A model instance or sequence of model instances to serialize.
+
+        Returns:
+            The serialized model, or a list of serialized models for a sequence.
+        """
+        if isinstance(data, BaseModel):
+            return cast(
+                "INPUT_TYPE",
+                data.model_dump(mode="json", by_alias=True, exclude_unset=True),
+            )
+        return [GAPIClient.model_dump(item) for item in data]
 
     @classmethod
     def parse(cls, data: INPUT_TYPE, *, update_model: bool = True) -> T:

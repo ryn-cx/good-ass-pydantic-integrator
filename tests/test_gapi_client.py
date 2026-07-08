@@ -168,16 +168,16 @@ class _TestModel(GAPIBaseModel):
     integer: int
 
 
-class TestDumpResponse:
-    """Test GAPIClient.dump_response."""
+class TestOriginalInput:
+    """Test GAPIClient.original_input."""
 
-    def test_dump_response(self) -> None:
+    def test_original_input(self) -> None:
         """A single model returns its raw input verbatim."""
         data = {"string": "string", "integer": 123}
         model = _TestModel.model_validate(data)
-        assert GAPIClient.dump(model) is data
+        assert GAPIClient.original_input(model) is data
 
-    def test_dump_response_list(self) -> None:
+    def test_original_input_list(self) -> None:
         """A list of models returns each model's raw input."""
         data1 = {"string": "string1", "integer": 1}
         data2 = {"string": "string2", "integer": 2}
@@ -185,16 +185,16 @@ class TestDumpResponse:
             _TestModel.model_validate(data1),
             _TestModel.model_validate(data2),
         ]
-        assert GAPIClient.dump(models) == [data1, data2]
+        assert GAPIClient.original_input(models) == [data1, data2]
 
-    def test_dump_response_unvalidated_raises(self) -> None:
+    def test_original_input_unvalidated_raises(self) -> None:
         """A model built without validation has no raw input and cannot be dumped."""
         model = _TestModel.model_construct(string="string", integer=123)
         with pytest.raises(ValueError, match="no raw input"):
-            GAPIClient.dump(model)
+            GAPIClient.original_input(model)
 
-    def test_dump_response_returns_raw_input(self) -> None:
-        """A parsed model dumps back the exact raw input, not model_dump output."""
+    def test_original_input_returns_raw_input(self) -> None:
+        """A parsed model returns the exact raw input, not model_dump output."""
         from tests.test_data.simple_gapi_model import SimpleGapiModel  # noqa: PLC0415
 
         temp_dir = tempfile.TemporaryDirectory()
@@ -214,10 +214,10 @@ class TestDumpResponse:
         data = {"created_at": "2000-01-01T00:00:00Z"}
         parsed = TestGapiClient.parse(data)
 
-        assert TestGapiClient.dump(parsed) is data
+        assert TestGapiClient.original_input(parsed) is data
 
-    def test_dump_root_list_model(self) -> None:
-        """A root model built from a top-level list dumps back the input list."""
+    def test_original_input_root_list_model(self) -> None:
+        """A root model built from a top-level list returns the input list."""
         from tests.test_data.simple_gapi_model import SimpleGapiModel  # noqa: PLC0415
 
         temp_dir = tempfile.TemporaryDirectory()
@@ -233,8 +233,54 @@ class TestDumpResponse:
 
         TestGapiClient.write_blank_model()
         # A top-level JSON list makes the generated root model a RootModel, which
-        # records no raw input itself; dump rebuilds it from the wrapped items.
+        # records no raw input itself; original_input rebuilds it from the items.
         data: list[dict[str, int]] = [{"id": 1}, {"id": 2}]
         parsed = TestGapiClient.parse(data)
 
-        assert TestGapiClient.dump(parsed) == data
+        assert TestGapiClient.original_input(parsed) == data
+
+
+class TestModelDump:
+    """Test GAPIClient.model_dump."""
+
+    def test_model_dump(self) -> None:
+        """A single model returns its Pydantic-serialized fields."""
+        data = {"string": "string", "integer": 123}
+        model = _TestModel.model_validate(data)
+        assert GAPIClient.model_dump(model) == data
+
+    def test_model_dump_list(self) -> None:
+        """A list of models returns each model's serialized fields."""
+        data1 = {"string": "string1", "integer": 1}
+        data2 = {"string": "string2", "integer": 2}
+        models = [
+            _TestModel.model_validate(data1),
+            _TestModel.model_validate(data2),
+        ]
+        assert GAPIClient.model_dump(models) == [data1, data2]
+
+    def test_model_dump_reserializes_not_raw_input(self) -> None:
+        """model_dump reflects the model's serialized value, not the raw input."""
+        from tests.test_data.simple_gapi_model import SimpleGapiModel  # noqa: PLC0415
+
+        temp_dir = tempfile.TemporaryDirectory()
+
+        class TestGapiClient(GAPIClient[SimpleGapiModel]):
+            """Concrete implementation of GAPIClient for testing."""
+
+            _response_model = SimpleGapiModel
+
+            @classmethod
+            def json_files_folder(cls) -> Path:
+                return Path(temp_dir.name)
+
+        TestGapiClient.write_blank_model()
+        # The raw input uses a "Z" suffix; Pydantic re-serializes it as "+00:00",
+        # so model_dump differs from original_input for the same model.
+        data = {"created_at": "2000-01-01T00:00:00Z"}
+        parsed = TestGapiClient.parse(data)
+
+        assert TestGapiClient.model_dump(parsed) == {
+            "created_at": "2000-01-01T00:00:00Z",
+        }
+        assert TestGapiClient.original_input(parsed) is data

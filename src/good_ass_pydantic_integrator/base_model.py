@@ -30,7 +30,7 @@ class GAPIBaseModel(BaseModel):
         # A GAPIClient may pass a data modifier through the validation context.
         # Apply it once, at the root: pop it so nested models (validated inside
         # handler) don't re-apply it. The *original*, unmodified input is what we
-        # record, so ``raw_input``/``dump`` still reflect exactly what was
+        # record, so ``raw_input``/``original_input`` still reflect exactly what was
         # downloaded even though the model is built from the transformed data.
         original = data
         context = info.context
