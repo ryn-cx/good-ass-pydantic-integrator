@@ -65,6 +65,10 @@ class GAPIClient[T: BaseModel]:
     _response_model: type[T]
     """The Pydantic model class for this client. Must be set by subclasses."""
 
+    _discriminator_key: str | None = None
+    """Key to use for creating discriminated unions (e.g. ``"__typename"`` for graphql
+    endpoints.)"""
+
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Validate that subclasses define _response_model correctly."""
         super().__init_subclass__(**kwargs)
@@ -275,6 +279,7 @@ class GAPIClient[T: BaseModel]:
                 cls._model_name(),
                 customizer=cls._customizer(),
                 base_class=_GAPI_MODEL_BASE_CLASS,
+                discriminator_key=cls._discriminator_key,
             )
             for json_file in cls.json_files():
                 gapi.add_object_from_dict(cls._modified_object_from_file(json_file))
@@ -342,6 +347,7 @@ class GAPIClient[T: BaseModel]:
             cls._model_name(),
             customizer=cls._customizer(),
             base_class=_GAPI_MODEL_BASE_CLASS,
+            discriminator_key=cls._discriminator_key,
         )
         if cls._schema_path().exists():
             gapi.add_schema_from_file(cls._schema_path())
