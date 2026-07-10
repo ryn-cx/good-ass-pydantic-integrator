@@ -86,7 +86,7 @@ wheels = [
 [[package]]
 name = "degenson"
 version = "1.3.0"
-source = { git = "https://github.com/ryn-cx/DeGenSON#12af71e5ccad1965cb9ac768d558d2c13e30a890" }
+source = { git = "https://github.com/ryn-cx/DeGenSON#2a8c9739b9d873a395e6b0e98110642b71763578" }
 
 [[package]]
 name = "freezegun"
