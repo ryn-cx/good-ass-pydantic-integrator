@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import datamodel_code_generator
 from datamodel_code_generator.format import Formatter
-from degenson import SchemaBuilder, discriminated_builder
+from degenson import SchemaBuilder
 
 from good_ass_pydantic_integrator.convert import convert_input_data
 from good_ass_pydantic_integrator.customizer import GAPICustomizer
@@ -112,7 +112,6 @@ class GAPI:
         customizer: GAPICustomizer | None = None,
         convert: bool = True,
         base_class: str = "",
-        discriminator_key: str | None = None,
     ) -> None:
         """Initialize GAPI.
 
@@ -123,16 +122,9 @@ class GAPI:
             convert: Auto-detect and convert date/datetime/timedelta strings.
             base_class: Dotted path to the base class generated models inherit
                 from. Defaults to ``pydantic.BaseModel``.
-            discriminator_key: Key to use for creating discriminated unions (e.g.
-            ``"__typename"`` for graphql endpoints.)
         """
         self.convert = convert
-        if builder is not None:
-            self.builder = builder
-        elif discriminator_key is not None:
-            self.builder = discriminated_builder(discriminator_key)
-        else:
-            self.builder = SchemaBuilder()
+        self.builder = builder or SchemaBuilder()
         self._customizer = customizer or GAPICustomizer()
 
         self.class_name = class_name
