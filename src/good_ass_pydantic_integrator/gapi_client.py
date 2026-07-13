@@ -4,13 +4,12 @@
 import importlib
 import inspect
 import json
-import re
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, cast, overload
+from typing import TYPE_CHECKING, ClassVar, cast, overload
 
 from pydantic import BaseModel, RootModel, ValidationError
 
@@ -64,6 +63,12 @@ class GAPIClient[T: BaseModel]:
 
     _response_model: type[T]
     """The Pydantic model class for this client. Must be set by subclasses."""
+
+    JSON_FILES_ROOT: ClassVar[Path | None] = None
+    """Root directory for saved JSON files. Each model's files live in
+    ``JSON_FILES_ROOT / <ClassName> / <file>.json``. When ``None`` (the default),
+    the root is a ``json_files`` directory next to the subclass that defines the
+    client. Override in a subclass to relocate all saved files."""
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Validate that subclasses define _response_model correctly."""
@@ -141,13 +146,6 @@ class GAPIClient[T: BaseModel]:
         """Return the name of the response model class."""
         return cls._response_model.__name__
 
-    @staticmethod
-    def _folder_name(model_name: str) -> str:
-        """Convert a model class name to snake_case for the folder name."""
-        string = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", model_name)
-        string = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", string)
-        return string.lower().removesuffix("_model")
-
     @classmethod
     def _model_path(cls) -> Path:
         """Return the file path for the response model."""
@@ -161,9 +159,10 @@ class GAPIClient[T: BaseModel]:
     @classmethod
     def json_files_folder(cls) -> Path:
         """Return the folder that contains all saved JSON files for the model."""
-        model_path = cls._model_path()
-        folder_name = cls._folder_name(cls._model_name())
-        return model_path.parent.parent / "_files" / folder_name
+        root = cls.JSON_FILES_ROOT
+        if root is None:
+            return Path(inspect.getfile(cls)).parent / "_files"
+        return root / cls._model_name()
 
     @classmethod
     def json_files(cls) -> list[Path]:
