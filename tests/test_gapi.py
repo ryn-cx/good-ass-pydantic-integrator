@@ -104,13 +104,10 @@ class TestReplaceField:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"IntegerThatIsStoredAsAString": "1"})
-        content = gapi.get_pydantic_model_content()
+        lines = gapi.get_pydantic_model_content().splitlines()
         assert (
-            """    integer_that_is_stored_as_a_string: int = Field(
-        ...,
-        alias="IntegerThatIsStoredAsAString",
-    )"""
-            in content
+            "    integer_that_is_stored_as_a_string: int ="
+            " Field(..., alias='IntegerThatIsStoredAsAString')" in lines
         )
 
 
@@ -140,13 +137,10 @@ class TestReplaceType:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"IntegerThatIsStoredAsAString": "1"})
-        content = gapi.get_pydantic_model_content()
+        lines = gapi.get_pydantic_model_content().splitlines()
         assert (
-            """    integer_that_is_stored_as_a_string: int = Field(
-        ...,
-        alias="IntegerThatIsStoredAsAString",
-    )"""
-            in content
+            "    integer_that_is_stored_as_a_string: int ="
+            " Field(..., alias='IntegerThatIsStoredAsAString')" in lines
         )
 
 
@@ -165,7 +159,7 @@ class TestAddSerializers:
         gapi.add_object_from_dict({"string": "string"})
         content = gapi.get_pydantic_model_content()
         assert (
-            """    @field_serializer("string")
+            """    @field_serializer('string')
     def serialize_string(self, value: str) -> str:
         return output"""
             in content
@@ -188,13 +182,13 @@ class TestAddSerializers:
         gapi.add_object_from_dict({"string": "string", "string2": "string2"})
         content = gapi.get_pydantic_model_content()
         assert (
-            """    @field_serializer("string")
+            """    @field_serializer('string')
     def serialize_string(self, value: str) -> str:
         return output"""
             in content
         )
         assert (
-            """    @field_serializer("string2")
+            """    @field_serializer('string2')
     def serialize_string2(self, value: str) -> str:
         return output"""
             in content
@@ -224,9 +218,10 @@ class TestAddSerializers:
         gapi.add_object_from_dict({"string": "string"})
         content = gapi.get_pydantic_model_content()
         assert (
-            """    @field_serializer("string")
+            """    @field_serializer('string')
     def serialize_string(self, value: str) -> str:
-        return value"""
+        output = value
+        return output"""
             in content
         )
 
@@ -251,23 +246,21 @@ class TestAddSerializers:
         )
         content = gapi.get_pydantic_model_content()
         assert (
-            """    @field_serializer("string")
+            """    @field_serializer('string')
     def serialize_string(self, value: str) -> str:
         return"""
             in content
         )
-        assert content.count('@field_serializer("string")') == 2  # noqa: PLR2004
+        assert content.count("@field_serializer('string')") == 2  # noqa: PLR2004
 
 
 class TestAddImports:
     """Test add_import."""
 
     def test_add_import(self) -> None:
-        """Test adding custom imports after the filename comment line."""
+        """Test that additional imports are inserted at the top of the module."""
         customizer = GAPICustomizer()
         customizer.add_additional_import("from pydantic import NaiveDatetime")
-        # Need to include a usage of NaiveDatetime to ensure the import is not
-        # removed by ruff.
         customizer.add_replacement_field(
             class_name="Model",
             field_name="string",
@@ -276,7 +269,7 @@ class TestAddImports:
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"string": "string"})
         lines = gapi.get_pydantic_model_content().splitlines()
-        assert "from pydantic import BaseModel, ConfigDict, NaiveDatetime" in lines
+        assert lines[0] == "from pydantic import NaiveDatetime"
 
 
 class TestReplaceUntypedList:

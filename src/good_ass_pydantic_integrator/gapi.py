@@ -2,9 +2,6 @@
 """GAPI core schema generation and Pydantic model code generation."""
 
 import json
-import shutil
-import subprocess
-from functools import cache
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING
@@ -18,87 +15,6 @@ from good_ass_pydantic_integrator.customizer import GAPICustomizer
 
 if TYPE_CHECKING:
     from good_ass_pydantic_integrator.constants import INPUT_TYPE
-
-
-@cache
-def build_ruff_noqa_line() -> str:
-    """Return the ``# ruff: noqa`` line prepended to generated models.
-
-    TC001/TC002/TC003 keep a consumer's ruff from moving annotation imports
-    under ``TYPE_CHECKING``, which breaks pydantic at runtime.
-    """
-    return "# ruff: noqa: D100, D101, D102, TC001, TC002, TC003\n"
-
-
-def format_with_ruff(content: str) -> str:
-    """Lint-fix and format generated code with ruff.
-
-    Both passes run ``--isolated`` so the consuming project's ruff config can't
-    apply fixes we don't want, and TC001/TC002/TC003 are ignored so annotation
-    imports are never moved under ``TYPE_CHECKING`` (which breaks pydantic at
-    runtime for models with ``UUID``/``date``/... fields).
-
-    Args:
-        content: The Python source code to format.
-
-    Returns:
-        The formatted Python source code.
-    """
-    if not shutil.which("uv"):
-        msg = "uv was not found"
-        raise FileNotFoundError(msg)
-
-    check_result = subprocess.run(
-        [  # noqa: S607
-            "uv",
-            "run",
-            "ruff",
-            "check",
-            "--isolated",
-            "--select",
-            "ALL",
-            "--ignore",
-            "TC001,TC002,TC003,RUF100",
-            "--fix",
-            "--unsafe-fixes",
-            "--stdin-filename",
-            "temp.py",
-            "-",
-        ],
-        input=content,
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        check=False,
-    )
-
-    if not check_result.stdout:
-        msg = f"Ruff formatting failed with error: {check_result.stderr}"
-        raise RuntimeError(msg)
-
-    format_result = subprocess.run(
-        [  # noqa: S607
-            "uv",
-            "run",
-            "ruff",
-            "format",
-            "--isolated",
-            "--stdin-filename",
-            "temp.py",
-            "-",
-        ],
-        input=check_result.stdout,
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        check=False,
-    )
-
-    if not format_result.stdout:
-        msg = f"Ruff formatting failed with error: {format_result.stderr}"
-        raise RuntimeError(msg)
-
-    return format_result.stdout
 
 
 class GAPI:
@@ -262,10 +178,7 @@ class GAPI:
             content = temp_path.read_text()
             temp_path.unlink()
 
-        content = self._customizer.apply_customizations(content)
-        content = format_with_ruff(content)
-        content = build_ruff_noqa_line() + content
-        self.cached_pydantic_model = format_with_ruff(content)
+        self.cached_pydantic_model = self._customizer.apply_customizations(content)
         return self.cached_pydantic_model
 
     def write_pydantic_model_to_file(self, output_path: Path) -> None:
