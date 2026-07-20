@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 MODIFIER_CONTEXT_KEY = "gapi_modify"
 """Validation-context key holding an optional callable that transforms the raw
-input before validation. A ``GAPIClient`` injects its ``clean_data`` hook here so
+input before validation. A ``GAPIClient`` injects its ``transform_input`` hook here so
 the model is built from the transformed shape while the raw input is preserved."""
 
 

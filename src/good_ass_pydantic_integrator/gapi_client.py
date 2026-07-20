@@ -89,7 +89,7 @@ class GAPIClient[T: BaseModel]:
                 raise TypeError(msg)
 
     @classmethod
-    def clean_data(cls, data: INPUT_TYPE) -> INPUT_TYPE:
+    def transform_input(cls, data: INPUT_TYPE) -> INPUT_TYPE:
         """Transform raw input before validation and before model generation.
 
         The default is a no-op. Override in a subclass to reshape the raw
@@ -108,8 +108,8 @@ class GAPIClient[T: BaseModel]:
 
     @classmethod
     def _modified_object_from_file(cls, file_path: Path) -> INPUT_TYPE:
-        """Load a saved raw JSON file and apply ``clean_data`` to it."""
-        return cls.clean_data(json.loads(file_path.read_text()))
+        """Load a saved raw JSON file and apply ``transform_input`` to it."""
+        return cls.transform_input(json.loads(file_path.read_text()))
 
     @classmethod
     def _replacement_fields(cls) -> list[ReplacementField]:
@@ -245,7 +245,7 @@ class GAPIClient[T: BaseModel]:
         try:
             return cls._response_model.model_validate(
                 data,
-                context={MODIFIER_CONTEXT_KEY: cls.clean_data},
+                context={MODIFIER_CONTEXT_KEY: cls.transform_input},
             )
         # If validation fails and updating is allowed, try automatically rebuilding
         # and reloading the model using the new data, then validate again. A second
@@ -258,7 +258,7 @@ class GAPIClient[T: BaseModel]:
             cls._update_model(new_file)
             return cls._response_model.model_validate(
                 data,
-                context={MODIFIER_CONTEXT_KEY: cls.clean_data},
+                context={MODIFIER_CONTEXT_KEY: cls.transform_input},
             )
 
     @classmethod
