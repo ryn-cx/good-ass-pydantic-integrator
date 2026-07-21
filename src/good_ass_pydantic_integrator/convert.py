@@ -50,6 +50,9 @@ def convert_value(input_string: str) -> MAIN_TYPE:
                 expected = expected.replace(".000Z", "Z")
             if adapter.dump_python(parsed, mode="json") == expected:
                 return parsed
+            # Force timedeltas through to fix P0D string issues.
+            if target_type is timedelta:
+                return parsed
 
     return input_string
 
