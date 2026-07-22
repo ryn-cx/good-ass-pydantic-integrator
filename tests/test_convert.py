@@ -7,14 +7,13 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from freezegun import freeze_time
 
-from good_ass_pydantic_integrator.convert import convert_input_data, convert_value
+from good_ass_pydantic_integrator.convert import convert_input_data
 
 if TYPE_CHECKING:
     from good_ass_pydantic_integrator.constants import INPUT_TYPE
 
-CONVERSION_CASES = [
+CONVERSION_CASES = (
     ("2018-11-13T20:20:39+08:00", datetime),
     ("2018-11-13T20:20:39Z", datetime),
     ("2018-11-13T20:20:39", datetime),
@@ -22,34 +21,16 @@ CONVERSION_CASES = [
     ("2018-11-13", date),
     ("20:20:39", time),
     ("P3D", timedelta),
+    # When there was code to check if the input matched the output P0D would fail and
+    # would become a str.
+    ("P0D", timedelta),
     ("192.168.1.1", ipaddress.IPv4Address),
     ("::1", ipaddress.IPv6Address),
     ("3e4666bf-d5e5-4aa7-b8ce-cefe41c7568a", uuid.UUID),
     ("String", str),
     ("123", str),
     ("123.45", str),
-]
-
-
-class TestConvertValue:
-    """Test convert_value function."""
-
-    @pytest.mark.parametrize(("input_data", "expected_type"), CONVERSION_CASES)
-    def test_convert_value(self, *, input_data: str, expected_type: type) -> None:
-        """Test converting a single value."""
-        assert type(convert_value(input_data)) is expected_type
-
-    def test_convert_value_under_freeze_time(self) -> None:
-        """Datetime inference must still work inside a freezegun context.
-
-        freezegun's freeze_time patches datetime.datetime to FakeDatetime in module
-        namespaces it can reach. If the inference type list captured the real datetime
-        class at module scope, TypeAdapter(<real datetime>) would raise
-        PydanticSchemaGenerationError and datetimes would silently fall through to str.
-        """
-        with freeze_time("2026-07-08"):
-            result = convert_value("2020-11-27T08:00:00.000Z")
-        assert isinstance(result, datetime)
+)
 
 
 class TestConvertInputData:

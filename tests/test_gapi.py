@@ -315,6 +315,34 @@ class TestRuntimeAnnotationImports:
         namespace["SearchModel"].model_validate(sample)
 
 
+class TestNarrowStringUnions:
+    """Test that widening a narrow string field keeps the narrow type usable."""
+
+    def test_uuid_or_str_field_preserves_uuid(self) -> None:
+        """A field seen as both a UUID and an arbitrary string keeps both.
+
+        The first object types ``target_id`` as a UUID; the second widens it with
+        a non-UUID string. Without a left-to-right union the smart union would
+        resolve every value to ``str``, discarding the UUID type.
+        """
+        gapi = GAPI(class_name="SearchModel")
+        gapi.add_object_from_dict({"target_id": "05eb6a8e-90ed-4947-8c0b-e6536cbddd5f"})
+        gapi.add_object_from_dict({"target_id": "laliga-on-espn-plus"})
+        content = gapi.get_pydantic_model_content()
+
+        assert "target_id: UUID | str = Field(union_mode='left_to_right')" in content
+
+        namespace: dict[str, Any] = {}
+        exec(content, namespace)  # noqa: S102
+        model = namespace["SearchModel"]
+        uuid_value = model.model_validate(
+            {"target_id": "05eb6a8e-90ed-4947-8c0b-e6536cbddd5f"},
+        ).target_id
+        str_value = model.model_validate({"target_id": "814"}).target_id
+        assert type(uuid_value).__name__ == "UUID"
+        assert type(str_value) is str
+
+
 class TestFalseConvertFlag:
     """Test the convert parameter."""
 

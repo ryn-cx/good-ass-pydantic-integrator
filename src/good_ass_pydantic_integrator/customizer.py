@@ -100,6 +100,26 @@ class CustomSerializer:
         return ast.parse(source).body
 
 
+# Pydantic type names datamodel-code-generator emits for the formatted-string
+# strategies (uuid, date-time, date, time, duration, ipv4, ipv6). Each is a
+# stricter parse of a value that is also a valid ``str``. When such a type is
+# unioned with a plain ``str``, pydantic's default *smart* union resolves the
+# value to ``str`` (the lossless, no-coercion match) regardless of member order,
+# discarding the narrower type. See ``_apply_left_to_right_unions``.
+_NARROW_STRING_TYPES = frozenset(
+    {
+        "UUID",
+        "AwareDatetime",
+        "datetime",
+        "date",
+        "time",
+        "timedelta",
+        "IPv4Address",
+        "IPv6Address",
+    },
+)
+
+
 class GAPICustomizer:
     """Compiles and applies customizations to generated models."""
 
@@ -206,6 +226,7 @@ class GAPICustomizer:
         }
 
         self._replace_untyped_lists(class_nodes)
+        pinned_union = self._apply_left_to_right_unions(class_nodes)
         self._apply_replacement_fields(class_nodes)
         self._apply_replacement_types(class_nodes)
         self._apply_custom_serializers(class_nodes)
@@ -213,6 +234,10 @@ class GAPICustomizer:
         additional_imports = list(self.additional_imports)
         if self.custom_serializers:
             additional_imports.append("from pydantic import field_serializer")
+        # The left-to-right pass may introduce the first Field(...) call in a
+        # model that had no aliases and therefore no Field import.
+        if pinned_union and not self._imports_name(tree, "Field"):
+            additional_imports.append("from pydantic import Field")
         self._apply_additional_imports(tree, additional_imports)
 
         ast.fix_missing_locations(tree)
@@ -316,6 +341,122 @@ class GAPICustomizer:
                 for child in ast.walk(node.annotation):
                     if GAPICustomizer._is_untyped_list(child):
                         child.slice = ast.Constant(value=None)
+
+    @staticmethod
+    def _imports_name(tree: ast.Module, name: str) -> bool:
+        """Check whether ``name`` is already imported at module level."""
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and any(
+                alias.asname == name or (alias.asname is None and alias.name == name)
+                for alias in node.names
+            ):
+                return True
+        return False
+
+    @classmethod
+    def _apply_left_to_right_unions(
+        cls,
+        class_nodes: dict[str, ast.ClassDef],
+    ) -> bool:
+        """Preserve narrow string types in ``<narrow> | str`` unions.
+
+        A value that is a valid UUID/datetime/etc. is also a valid ``str``, so
+        pydantic's default *smart* union resolves it to ``str`` and the narrower
+        type is lost. This happens whenever type inference widens a field that is
+        usually (say) a UUID but sometimes an arbitrary string.
+
+        For every field whose annotation unions a narrow string type with a plain
+        ``str``, reorder the narrow types ahead of ``str`` and pin the field to
+        ``union_mode='left_to_right'`` so pydantic tries the narrow parse first
+        and only falls back to ``str`` when it fails.
+
+        Returns:
+            ``True`` if any field was modified.
+        """
+        mutated = False
+        for class_node in class_nodes.values():
+            for node in class_node.body:
+                if not (
+                    isinstance(node, ast.AnnAssign)
+                    and isinstance(node.target, ast.Name)
+                ):
+                    continue
+                members = cls._flatten_union(node.annotation)
+                if members is None:
+                    continue
+                names = {m.id for m in members if isinstance(m, ast.Name)}
+                if "str" not in names or names.isdisjoint(_NARROW_STRING_TYPES):
+                    continue
+                node.annotation = cls._build_union(cls._narrow_first(members))
+                cls._pin_left_to_right(node)
+                mutated = True
+        return mutated
+
+    @staticmethod
+    def _flatten_union(annotation: ast.expr) -> list[ast.expr] | None:
+        """Return the members of a PEP 604 ``a | b | c`` union, else ``None``.
+
+        Only the ``|`` operator form is produced by the generator, so
+        ``Union[...]`` / ``Optional[...]`` subscripts are intentionally ignored.
+        """
+        if not (isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr)):
+            return None
+        left = GAPICustomizer._flatten_union(annotation.left)
+        left_members = left if left is not None else [annotation.left]
+        return [*left_members, annotation.right]
+
+    @staticmethod
+    def _narrow_first(members: list[ast.expr]) -> list[ast.expr]:
+        """Move narrow string types ahead of the rest, preserving relative order."""
+        narrow = [
+            m
+            for m in members
+            if isinstance(m, ast.Name) and m.id in _NARROW_STRING_TYPES
+        ]
+        rest = [
+            m
+            for m in members
+            if not (isinstance(m, ast.Name) and m.id in _NARROW_STRING_TYPES)
+        ]
+        return narrow + rest
+
+    @staticmethod
+    def _build_union(members: list[ast.expr]) -> ast.expr:
+        """Fold ``members`` back into a left-associative ``a | b | c`` union."""
+        union = members[0]
+        for member in members[1:]:
+            union = ast.BinOp(left=union, op=ast.BitOr(), right=member)
+        return union
+
+    @staticmethod
+    def _pin_left_to_right(node: ast.AnnAssign) -> None:
+        """Add ``union_mode='left_to_right'`` to a field's ``Field(...)`` call."""
+        keyword = ast.keyword(
+            arg="union_mode",
+            value=ast.Constant(value="left_to_right"),
+        )
+        value = node.value
+        if (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "Field"
+        ):
+            if not any(kw.arg == "union_mode" for kw in value.keywords):
+                value.keywords.append(keyword)
+        elif value is None:
+            # Required field with no default: Field() alone keeps it required.
+            node.value = ast.Call(
+                func=ast.Name(id="Field", ctx=ast.Load()),
+                args=[],
+                keywords=[keyword],
+            )
+        else:
+            # Plain default (e.g. ``= None``): fold it into Field(default=...).
+            node.value = ast.Call(
+                func=ast.Name(id="Field", ctx=ast.Load()),
+                args=[],
+                keywords=[ast.keyword(arg="default", value=value), keyword],
+            )
 
     @staticmethod
     def _is_untyped_list(node: ast.AST) -> TypeGuard[ast.Subscript]:

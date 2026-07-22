@@ -275,9 +275,10 @@ class TestModelDump:
                 return Path(temp_dir.name)
 
         TestGapiClient.write_blank_model()
-        # The raw input uses a "Z" suffix; Pydantic re-serializes it as "+00:00",
-        # so model_dump differs from original_input for the same model.
-        data = {"created_at": "2000-01-01T00:00:00Z"}
+        # Pydantic normalizes the datetime, dropping the redundant ".000"
+        # milliseconds, so model_dump re-serializes to a "Z" without them. Only
+        # original_input recovers the exact raw value the model was built from.
+        data = {"created_at": "2000-01-01T00:00:00.000Z"}
         parsed = TestGapiClient.parse(data)
 
         assert TestGapiClient.model_dump(parsed) == {
