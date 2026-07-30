@@ -37,7 +37,7 @@ class GAPI:
             customizer: Customizer for post-generation field/serializer/import changes.
             convert: Auto-detect and convert date/datetime/timedelta strings.
             base_class: Dotted path to the base class generated models inherit
-                from. Defaults to ``pydantic.BaseModel``.
+                from. Defaults to `pydantic.BaseModel`.
         """
         self.convert = convert
         self.builder = builder or SchemaBuilder()

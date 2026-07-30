@@ -34,14 +34,14 @@ logger = getLogger(__name__)
 
 _GAPI_MODEL_BASE_CLASS = f"good_ass_pydantic_integrator.{GAPIBaseModel.__qualname__}"
 """Public dotted path generated response models inherit from (via the package
-root, not the ``base_model`` submodule), so they carry raw input."""
+root, not the `base_model` submodule), so they carry raw input."""
 
 
 def _recover_raw_input(value: object) -> JSON_VALUE:
     """Recover the raw input a model (or container of models) was built from.
 
     Object models are :class:`GAPIBaseModel` and record their raw input
-    directly. A root model (e.g. a top-level JSON list) is a ``RootModel`` that
+    directly. A root model (e.g. a top-level JSON list) is a `RootModel` that
     records nothing itself, so its raw input is rebuilt from the models it wraps.
     Plain JSON values pass through unchanged.
     """
@@ -66,8 +66,8 @@ class GAPIClient[T: BaseModel]:
 
     JSON_FILES_ROOT: ClassVar[Path | None] = None
     """Root directory for saved JSON files. Each model's files live in
-    ``JSON_FILES_ROOT / <ClassName> / <file>.json``. When ``None`` (the default),
-    the root is a ``json_files`` directory next to the subclass that defines the
+    `JSON_FILES_ROOT / <ClassName> / <file>.json`. When `None` (the default),
+    the root is a `json_files` directory next to the subclass that defines the
     client. Override in a subclass to relocate all saved files."""
 
     def __init_subclass__(cls, **kwargs: object) -> None:
@@ -96,7 +96,7 @@ class GAPIClient[T: BaseModel]:
         downloaded data (e.g. denormalize an Apollo cache into per-type lists)
         without changing what is stored on disk: the saved JSON corpus stays
         exactly as downloaded, and this hook runs on the way into both
-        ``parse`` and model rebuilding, so the two never drift apart.
+        `parse` and model rebuilding, so the two never drift apart.
 
         Args:
             data: The raw JSON data, as downloaded/saved.
@@ -108,7 +108,7 @@ class GAPIClient[T: BaseModel]:
 
     @classmethod
     def _modified_object_from_file(cls, file_path: Path) -> INPUT_TYPE:
-        """Load a saved raw JSON file and apply ``transform_input`` to it."""
+        """Load a saved raw JSON file and apply `transform_input` to it."""
         return cls.transform_input(json.loads(file_path.read_text()))
 
     @classmethod
@@ -185,8 +185,8 @@ class GAPIClient[T: BaseModel]:
         Handles a single model, a sequence of models, and a root model (e.g. a
         top-level JSON list), recovering the exact raw input in each case. The
         result is verbatim what was validated, so round-tripping preserves details
-        that re-serialization would lose (e.g. a datetime's original ``Z`` suffix).
-        Use ``model_dump`` instead to get the model's own serialized shape.
+        that re-serialization would lose (e.g. a datetime's original `Z` suffix).
+        Use `model_dump` instead to get the model's own serialized shape.
 
         Args:
             data: A model instance or sequence of model instances.
@@ -196,7 +196,7 @@ class GAPIClient[T: BaseModel]:
 
         Raises:
             ValueError: If a model has no recorded raw input (i.e. it was built
-                via ``model_construct`` rather than validated).
+                via `model_construct` rather than validated).
         """
         return cast("INPUT_TYPE | list[INPUT_TYPE]", _recover_raw_input(data))
 
@@ -212,10 +212,10 @@ class GAPIClient[T: BaseModel]:
     ) -> INPUT_TYPE | list[INPUT_TYPE]:
         """Serialize a model to a JSON-compatible structure via Pydantic.
 
-        Unlike ``original_input``, which returns the exact validated input, this
+        Unlike `original_input`, which returns the exact validated input, this
         reflects the model's current field values, re-serialized by Pydantic. Uses
-        ``mode="json"`` for JSON-compatible values, ``by_alias=True`` so field
-        aliases match the source shape, and ``exclude_unset=True`` to omit fields
+        `mode="json"` for JSON-compatible values, `by_alias=True` so field
+        aliases match the source shape, and `exclude_unset=True` to omit fields
         that were never set.
 
         Args:
@@ -379,7 +379,7 @@ class GAPIClient[T: BaseModel]:
 
     @classmethod
     def _create_init_file(cls) -> None:
-        """Create ``__init__.py`` in the model directory if it doesn't exist."""
+        """Create `__init__.py` in the model directory if it doesn't exist."""
         model_path = cls._model_path()
         init_path = model_path.parent / "__init__.py"
         if not init_path.exists():

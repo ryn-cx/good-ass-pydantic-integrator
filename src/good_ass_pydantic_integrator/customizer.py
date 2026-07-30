@@ -15,9 +15,9 @@ class ReplacementField:
         class_name: The name of the class containing the field to replace.
         field_name: The name of the existing field to replace.
         new_field: The new field definition as a string. Either a full annotated
-            assignment like ``"my_field: int = Field(...)"`` or just the
-            annotation portion like ``"int = Field(...)"`` — in the latter case
-            ``field_name`` is prepended automatically.
+            assignment like `"my_field: int = Field(...)"` or just the
+            annotation portion like `"int = Field(...)"` — in the latter case
+            `field_name` is prepended automatically.
     """
 
     class_name: str
@@ -36,13 +36,13 @@ class ReplacementField:
 class ReplacementType:
     """Replace only the type annotation of an existing field.
 
-    Unlike ``ReplacementField`` which replaces the entire field definition, this
+    Unlike `ReplacementField` which replaces the entire field definition, this
     preserves the field name, alias, default value, and other attributes.
 
     Attributes:
         class_name: The name of the class containing the field.
         field_name: The name of the field whose type to replace.
-        new_type: The new type annotation as a string, e.g. ``"int"``.
+        new_type: The new type annotation as a string, e.g. `"int"`.
     """
 
     class_name: str
@@ -76,10 +76,10 @@ class CustomSerializer:
     class_name: str | None = field(default=None, kw_only=True)
 
     def create_serializer_ast(self, input_type: str) -> list[ast.stmt]:
-        """Generate the ``@field_serializer`` decorated method as AST nodes.
+        """Generate the `@field_serializer` decorated method as AST nodes.
 
         Args:
-            input_type: The type annotation for the ``value`` parameter,
+            input_type: The type annotation for the `value` parameter,
                 derived from the existing field.
 
         Returns:
@@ -102,14 +102,15 @@ class CustomSerializer:
 
 # Pydantic type names datamodel-code-generator emits for the formatted-string
 # strategies (uuid, date-time, date, time, duration, ipv4, ipv6). Each is a
-# stricter parse of a value that is also a valid ``str``. When such a type is
-# unioned with a plain ``str``, pydantic's default *smart* union resolves the
-# value to ``str`` (the lossless, no-coercion match) regardless of member order,
-# discarding the narrower type. See ``_apply_left_to_right_unions``.
+# stricter parse of a value that is also a valid str. When such a type is
+# unioned with a plain str, pydantic's default *smart* union resolves the
+# value to str (the lossless, no-coercion match) regardless of member order,
+# discarding the narrower type. See _apply_left_to_right_unions.
 _NARROW_STRING_TYPES = frozenset(
     {
         "UUID",
         "AwareDatetime",
+        "NaiveDatetime",
         "datetime",
         "date",
         "time",
@@ -142,9 +143,9 @@ class GAPICustomizer:
             class_name: The class containing the field to replace.
             field_name: The name of the field to replace.
             new_field: The new field definition. Either a full annotated
-                assignment like ``"field: int"`` or just the annotation
-                portion like ``"int = Field(...)"`` — in the latter case
-                ``field_name`` is prepended automatically.
+                assignment like `"field: int"` or just the annotation
+                portion like `"int = Field(...)"` — in the latter case
+                `field_name` is prepended automatically.
         """
         replacement_field = ReplacementField(
             class_name=class_name,
@@ -161,13 +162,13 @@ class GAPICustomizer:
     ) -> None:
         """Add a type replacement to apply during model generation.
 
-        Unlike ``add_replacement_field``, this only changes the type annotation
+        Unlike `add_replacement_field`, this only changes the type annotation
         while preserving the field name, alias, default value, and other attributes.
 
         Args:
             class_name: The class containing the field.
             field_name: The name of the field whose type to replace.
-            new_type: The new type annotation, e.g. ``"int"``.
+            new_type: The new type annotation, e.g. `"int"`.
         """
         replacement_type = ReplacementType(
             class_name=class_name,
@@ -205,8 +206,8 @@ class GAPICustomizer:
         """Add an additional import to apply during model generation.
 
         Args:
-            import_statement: A full import statement, e.g. ``"from pydantic import
-                Field"``.
+            import_statement: A full import statement, e.g. `"from pydantic import
+                Field"`.
         """
         self.additional_imports.append(import_statement)
 
@@ -323,7 +324,7 @@ class GAPICustomizer:
     def _replace_untyped_lists(
         class_nodes: dict[str, ast.ClassDef],
     ) -> None:
-        """Replace ``list[Any]`` with ``list[None]`` in annotations.
+        """Replace `list[Any]` with `list[None]` in annotations.
 
         If the first file has an empty list it will be typed as list[Any], if the next
         file has a non-empty list the type will remain a list[Any] which will cause
@@ -344,7 +345,7 @@ class GAPICustomizer:
 
     @staticmethod
     def _imports_name(tree: ast.Module, name: str) -> bool:
-        """Check whether ``name`` is already imported at module level."""
+        """Check whether `name` is already imported at module level."""
         for node in tree.body:
             if isinstance(node, ast.ImportFrom) and any(
                 alias.asname == name or (alias.asname is None and alias.name == name)
@@ -358,20 +359,20 @@ class GAPICustomizer:
         cls,
         class_nodes: dict[str, ast.ClassDef],
     ) -> bool:
-        """Preserve narrow string types in ``<narrow> | str`` unions.
+        """Preserve narrow string types in `<narrow> | str` unions.
 
-        A value that is a valid UUID/datetime/etc. is also a valid ``str``, so
-        pydantic's default *smart* union resolves it to ``str`` and the narrower
+        A value that is a valid UUID/datetime/etc. is also a valid `str`, so
+        pydantic's default *smart* union resolves it to `str` and the narrower
         type is lost. This happens whenever type inference widens a field that is
         usually (say) a UUID but sometimes an arbitrary string.
 
         For every field whose annotation unions a narrow string type with a plain
-        ``str``, reorder the narrow types ahead of ``str`` and pin the field to
-        ``union_mode='left_to_right'`` so pydantic tries the narrow parse first
-        and only falls back to ``str`` when it fails.
+        `str`, reorder the narrow types ahead of `str` and pin the field to
+        `union_mode='left_to_right'` so pydantic tries the narrow parse first
+        and only falls back to `str` when it fails.
 
         Returns:
-            ``True`` if any field was modified.
+            `True` if any field was modified.
         """
         mutated = False
         for class_node in class_nodes.values():
@@ -394,12 +395,14 @@ class GAPICustomizer:
 
     @staticmethod
     def _flatten_union(annotation: ast.expr) -> list[ast.expr] | None:
-        """Return the members of a PEP 604 ``a | b | c`` union, else ``None``.
+        """Return the members of a PEP 604 `a | b | c` union, else `None`.
 
-        Only the ``|`` operator form is produced by the generator, so
-        ``Union[...]`` / ``Optional[...]`` subscripts are intentionally ignored.
+        Only the `|` operator form is produced by the generator, so
+        `Union[...]` / `Optional[...]` subscripts are intentionally ignored.
         """
-        if not (isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr)):
+        if not (
+            isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr)
+        ):
             return None
         left = GAPICustomizer._flatten_union(annotation.left)
         left_members = left if left is not None else [annotation.left]
@@ -422,7 +425,7 @@ class GAPICustomizer:
 
     @staticmethod
     def _build_union(members: list[ast.expr]) -> ast.expr:
-        """Fold ``members`` back into a left-associative ``a | b | c`` union."""
+        """Fold `members` back into a left-associative `a | b | c` union."""
         union = members[0]
         for member in members[1:]:
             union = ast.BinOp(left=union, op=ast.BitOr(), right=member)
@@ -430,7 +433,7 @@ class GAPICustomizer:
 
     @staticmethod
     def _pin_left_to_right(node: ast.AnnAssign) -> None:
-        """Add ``union_mode='left_to_right'`` to a field's ``Field(...)`` call."""
+        """Add `union_mode='left_to_right'` to a field's `Field(...)` call."""
         keyword = ast.keyword(
             arg="union_mode",
             value=ast.Constant(value="left_to_right"),
@@ -451,7 +454,7 @@ class GAPICustomizer:
                 keywords=[keyword],
             )
         else:
-            # Plain default (e.g. ``= None``): fold it into Field(default=...).
+            # Plain default (e.g. = None): fold it into Field(default=...).
             node.value = ast.Call(
                 func=ast.Name(id="Field", ctx=ast.Load()),
                 args=[],
@@ -460,7 +463,7 @@ class GAPICustomizer:
 
     @staticmethod
     def _is_untyped_list(node: ast.AST) -> TypeGuard[ast.Subscript]:
-        """Check if an AST node has an annotation of ``list[Any]``."""
+        """Check if an AST node has an annotation of `list[Any]`."""
         return (
             isinstance(node, ast.Subscript)
             and isinstance(node.value, ast.Name)

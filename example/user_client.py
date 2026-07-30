@@ -12,7 +12,7 @@ from good_ass_pydantic_integrator import GAPIClient
 
 
 class UserClient(GAPIClient[UserModel]):
-    """Auto-updating client for ``UserModel``."""
+    """Auto-updating client for `UserModel`."""
 
     _response_model = UserModel
 

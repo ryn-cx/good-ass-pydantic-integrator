@@ -79,7 +79,7 @@ class TestReplaceField:
         assert "    integer_that_is_stored_as_a_string: int" in lines
 
     def test_add_replacement_field_without_field_name_prefix(self) -> None:
-        """Test passing a new_field that omits the ``field_name:`` prefix."""
+        """Test passing a new_field that omits the `field_name:` prefix."""
         customizer = GAPICustomizer()
         customizer.add_replacement_field(
             class_name="Model",
@@ -321,9 +321,9 @@ class TestNarrowStringUnions:
     def test_uuid_or_str_field_preserves_uuid(self) -> None:
         """A field seen as both a UUID and an arbitrary string keeps both.
 
-        The first object types ``target_id`` as a UUID; the second widens it with
+        The first object types `target_id` as a UUID; the second widens it with
         a non-UUID string. Without a left-to-right union the smart union would
-        resolve every value to ``str``, discarding the UUID type.
+        resolve every value to `str`, discarding the UUID type.
         """
         gapi = GAPI(class_name="SearchModel")
         gapi.add_object_from_dict({"target_id": "05eb6a8e-90ed-4947-8c0b-e6536cbddd5f"})
@@ -341,6 +341,51 @@ class TestNarrowStringUnions:
         str_value = model.model_validate({"target_id": "814"}).target_id
         assert type(uuid_value).__name__ == "UUID"
         assert type(str_value) is str
+
+
+class TestDatetimeAwareness:
+    """Test that naive and timezone-aware datetimes get distinct types."""
+
+    def test_naive_datetime_is_not_aware(self) -> None:
+        """A datetime without an offset is typed as `NaiveDatetime`."""
+        gapi = GAPI()
+        gapi.add_object_from_dict({"validity_end_time": "2026-12-31T23:59:59"})
+        lines = gapi.get_pydantic_model_content().splitlines()
+        assert "    validity_end_time: NaiveDatetime" in lines
+
+    def test_aware_datetime_is_aware(self) -> None:
+        """A datetime with an offset is typed as `AwareDatetime`."""
+        gapi = GAPI()
+        gapi.add_object_from_dict({"validity_end_time": "2026-12-31T23:59:59Z"})
+        lines = gapi.get_pydantic_model_content().splitlines()
+        assert "    validity_end_time: AwareDatetime" in lines
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            ("2026-12-31T23:59:59", "2026-12-31T23:59:59Z"),
+            ("2026-12-31T23:59:59Z", "2026-12-31T23:59:59"),
+        ],
+        ids=["naive_first", "aware_first"],
+    )
+    def test_mixed_datetimes_accept_both(self, values: tuple[str, str]) -> None:
+        """A field seen as both naive and aware validates either form."""
+        gapi = GAPI(class_name="ContentModel")
+        for value in values:
+            gapi.add_object_from_dict({"validity_end_time": value})
+        content = gapi.get_pydantic_model_content()
+
+        namespace: dict[str, Any] = {}
+        exec(content, namespace)  # noqa: S102
+        model = namespace["ContentModel"]
+        naive = model.model_validate({"validity_end_time": values[0]})
+        aware = model.model_validate({"validity_end_time": values[1]})
+        assert (naive.validity_end_time.tzinfo is None) == (
+            values[0] == "2026-12-31T23:59:59"
+        )
+        assert (aware.validity_end_time.tzinfo is None) == (
+            values[1] == "2026-12-31T23:59:59"
+        )
 
 
 class TestFalseConvertFlag:

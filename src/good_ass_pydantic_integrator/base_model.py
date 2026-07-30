@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 MODIFIER_CONTEXT_KEY = "gapi_modify"
 """Validation-context key holding an optional callable that transforms the raw
-input before validation. A ``GAPIClient`` injects its ``transform_input`` hook here so
+input before validation. A `GAPIClient` injects its `transform_input` hook here so
 the model is built from the transformed shape while the raw input is preserved."""
 
 
@@ -30,7 +30,7 @@ class GAPIBaseModel(BaseModel):
         # A GAPIClient may pass a data modifier through the validation context.
         # Apply it once, at the root: pop it so nested models (validated inside
         # handler) don't re-apply it. The *original*, unmodified input is what we
-        # record, so ``raw_input``/``original_input`` still reflect exactly what was
+        # record, so raw_input/original_input still reflect exactly what was
         # downloaded even though the model is built from the transformed data.
         original = data
         context = info.context
@@ -48,7 +48,7 @@ class GAPIBaseModel(BaseModel):
         """The input used to create this model.
 
         Raises:
-            ValueError: If the model was built via ``model_construct``, which
+            ValueError: If the model was built via `model_construct`, which
                 bypasses validation and so records no raw input.
         """
         try:
