@@ -54,23 +54,32 @@ class ParseLevel(IntEnum):
     """How far `GAPIClient.parse` may go to make invalid data parse.
 
     Each level adds one recovery stage to the one below it, so a higher level
-    always tries everything a lower level does first.
+    always tries everything a lower level does first. The order the stages run
+    in is not the order of the levels: regenerating the model is a last resort,
+    tried only once the cheaper recoveries a level allows have failed, and
+    `ALLOW_MISSING` skips it altogether.
+
+    Data that fails the first validation is saved as a new sample at every level
+    above `STRICT`, so `ALLOW_MISSING` still leaves the sample on disk for a
+    later `rebuild_model`.
     """
 
     STRICT = 1
     """Validate once. A failure raises, leaving the model untouched."""
 
     UPDATE = 2
-    """Also save the data as a new sample, update the model from it, and
-    validate again. This is the default."""
+    """Also update the model from the new sample and validate again, once every
+    other recovery the level allows has failed. This is the default."""
 
     ALLOW_EXTRA = 3
-    """Also validate again with the generated models' `extra="forbid"`
-    overridden, so unknown fields are ignored rather than rejected."""
+    """Also validate with the generated models' `extra="forbid"` overridden, so
+    unknown fields are ignored rather than rejected. Tried before the model is
+    updated, so data that only carries extra fields never regenerates it."""
 
     ALLOW_MISSING = 4
-    """Also validate a final time against a throwaway subclass of the response
-    model with every field, at every level of nesting, made optional. The data is
+    """Validate a final time against a throwaway subclass of the response model
+    with every field, at every level of nesting, made optional, and skip the
+    regeneration the levels below perform. The data is
     still validated, coerced and parsed into nested models as usual, but a field
     the data no longer carries comes back as `None` even though its type hint
     says it cannot be. The result is typed as the response model, so this hides a
@@ -400,18 +409,27 @@ class GAPIClient[T: BaseModel]:
     def parse(cls, data: INPUT_TYPE, *, level: ParseLevel = ParseLevel.UPDATE) -> T:
         """Parses data into a model, recovering from failures up to `level`.
 
-        The stages, each only attempted when `level` allows it, are:
+        The stages, in the order they are attempted and each only attempted when
+        `level` allows it, are:
 
         1. Validate the data as-is (`ParseLevel.STRICT`).
-        2. Save the data as a new sample, update the model from it, and validate
-           again (`ParseLevel.UPDATE`).
-        3. Validate again with `extra="forbid"` overridden on the generated
+        2. Validate again with `extra="forbid"` overridden on the generated
            models, so unknown fields are ignored (`ParseLevel.ALLOW_EXTRA`).
+        3. Update the model from the new sample and validate again
+           (`ParseLevel.UPDATE`).
         4. Validate a final time against a copy of the model with every field
            made optional (`ParseLevel.ALLOW_MISSING`).
 
-        Data that fails the first stage is saved as a new sample either way, so
-        anything that only parses at a later stage is on disk to look at later.
+        Ignoring unknown fields comes before regenerating so a level that allows
+        both only rewrites the generated code when nothing cheaper works.
+        `ALLOW_MISSING` is the exception to the stages being cumulative: it skips
+        the update stage, because data the model is missing fields for is exactly
+        the data that should not be regenerated into the model.
+
+        Data that fails the first stage is saved as a new sample at every level
+        above `STRICT`, so anything that only parses at a later stage is on disk
+        to look at later, and `ALLOW_MISSING` still leaves the sample behind for
+        a later `rebuild_model`.
 
         Args:
             data: The data to parse.
@@ -431,28 +449,31 @@ class GAPIClient[T: BaseModel]:
             if level < ParseLevel.UPDATE:
                 raise
             logger.info("Validation failed: %s.", cls._model_name())
-            cls._update_model(cls.save_new_json_file(data))
+            new_file_path = cls.save_new_json_file(data)
 
-        try:
-            return cls._validate(data)
-        except ValidationError:
-            if level < ParseLevel.ALLOW_EXTRA:
-                raise
-            logger.info("Validation failed after updating: %s.", cls._model_name())
+        # Ignoring unknown fields shows whether extra fields alone are the
+        # problem, and salvages the parse if they are, without touching the
+        # generated code the way the update stage below does.
+        if level >= ParseLevel.ALLOW_EXTRA:
+            try:
+                with cls._extra_fields_allowed():
+                    return cls._validate(data)
+            except ValidationError:
+                logger.info(
+                    "Validation failed allowing extra fields: %s.",
+                    cls._model_name(),
+                )
 
-        # The updated model still rejects the data, so the mismatch is not just a
-        # field the schema has not seen yet. Ignoring unknown fields shows whether
-        # extra fields alone are the problem, and salvages the parse if they are.
-        try:
-            with cls._extra_fields_allowed():
+        # Regenerating writes the schema and model files, so it is skipped at
+        # ALLOW_MISSING: that level exists for data missing fields the model has,
+        # which would only widen the generated model into accepting less.
+        if level < ParseLevel.ALLOW_MISSING:
+            cls._update_model(new_file_path)
+            try:
                 return cls._validate(data)
-        except ValidationError:
-            if level < ParseLevel.ALLOW_MISSING:
+            except ValidationError:
+                logger.info("Validation failed after updating: %s.", cls._model_name())
                 raise
-            logger.info(
-                "Validation failed allowing extra fields: %s.",
-                cls._model_name(),
-            )
 
         logger.warning(
             "Parsing %s with every field optional. Fields the data is missing "
