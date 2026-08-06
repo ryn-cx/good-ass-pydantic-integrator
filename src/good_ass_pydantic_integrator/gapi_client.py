@@ -59,13 +59,14 @@ class ParseLevel(IntEnum):
     tried only once the cheaper recoveries a level allows have failed, and
     `ALLOW_MISSING` skips it altogether.
 
-    Data that fails the first validation is saved as a new sample at every level
-    above `STRICT`, so `ALLOW_MISSING` still leaves the sample on disk for a
-    later `rebuild_model`.
+    Data that fails the first validation is saved as a new sample whatever the
+    level, so a level that never regenerates still leaves the sample on disk for
+    a later `rebuild_model`.
     """
 
     STRICT = 1
-    """Validate once. A failure raises, leaving the model untouched."""
+    """Validate once. A failure saves the sample and raises, leaving the model
+    untouched."""
 
     UPDATE = 2
     """Also update the model from the new sample and validate again, once every
@@ -433,27 +434,9 @@ class GAPIClient[T: BaseModel]:
     def parse(cls, data: INPUT_TYPE, *, level: ParseLevel = ParseLevel.UPDATE) -> T:
         """Parses data into a model, recovering from failures up to `level`.
 
-        The stages, in the order they are attempted and each only attempted when
-        `level` allows it, are:
-
-        1. Validate the data as-is (`ParseLevel.STRICT`).
-        2. Validate again with `extra="forbid"` overridden on the generated
-           models, so unknown fields are ignored (`ParseLevel.ALLOW_EXTRA`).
-        3. Update the model from the new sample and validate again
-           (`ParseLevel.UPDATE`).
-        4. Validate a final time against a copy of the model with every field
-           made optional (`ParseLevel.ALLOW_MISSING`).
-
-        Ignoring unknown fields comes before regenerating so a level that allows
-        both only rewrites the generated code when nothing cheaper works.
-        `ALLOW_MISSING` is the exception to the stages being cumulative: it skips
-        the update stage, because data the model is missing fields for is exactly
-        the data that should not be regenerated into the model.
-
-        Data that fails the first stage is saved as a new sample at every level
-        above `STRICT`, so anything that only parses at a later stage is on disk
-        to look at later, and `ALLOW_MISSING` still leaves the sample behind for
-        a later `rebuild_model`.
+        Each level has its own parse method, which this dispatches to. See
+        `ParseLevel` for what the levels mean and the methods below for the
+        stages each one runs.
 
         Args:
             data: The data to parse.
@@ -467,38 +450,123 @@ class GAPIClient[T: BaseModel]:
             ValidationError: If the data still fails to validate after every
                 stage `level` permits.
         """
+        parsers = {
+            ParseLevel.STRICT: cls._parse_strict,
+            ParseLevel.UPDATE: cls._parse_updating,
+            ParseLevel.ALLOW_EXTRA: cls._parse_allowing_extra,
+            ParseLevel.ALLOW_MISSING: cls._parse_allowing_missing,
+        }
+        return parsers[level](data)
+
+    @classmethod
+    def _parse_strict(cls, data: INPUT_TYPE) -> T:
+        """Validate the data as-is, saving a sample of anything that fails.
+
+        The sample is saved whatever the level, so data that fails here is on
+        disk to look at later, and a level that never regenerates still leaves
+        it behind for a later `rebuild_model`.
+
+        Raises:
+            ValidationError: If the data does not validate.
+        """
         try:
             return cls._validate(data)
         except ValidationError:
-            if level < ParseLevel.UPDATE:
-                raise
-            logger.info("Validation failed: %s.", cls._model_name())
-            new_file_path = cls.save_new_json_file(data)
+            cls._save_failed_sample(data)
+            raise
 
-        # Ignoring unknown fields shows whether extra fields alone are the
-        # problem, and salvages the parse if they are, without touching the
-        # generated code the way the update stage below does.
-        if level >= ParseLevel.ALLOW_EXTRA:
-            try:
-                with cls._extra_fields_allowed():
-                    return cls._validate(data)
-            except ValidationError:
-                logger.info(
-                    "Validation failed allowing extra fields: %s.",
-                    cls._model_name(),
-                )
+    @classmethod
+    def _parse_updating(cls, data: INPUT_TYPE) -> T:
+        """Validate the data, updating the model from it if that fails.
 
-        # Regenerating writes the schema and model files, so it is skipped at
-        # ALLOW_MISSING: that level exists for data missing fields the model has,
-        # which would only widen the generated model into accepting less.
-        if level < ParseLevel.ALLOW_MISSING:
-            cls._update_model(new_file_path)
-            try:
+        Raises:
+            ValidationError: If the data does not validate after the update.
+        """
+        try:
+            return cls._validate(data)
+        except ValidationError:
+            sample = cls._save_failed_sample(data)
+        return cls._validate_after_update(data, sample)
+
+    @classmethod
+    def _parse_allowing_extra(cls, data: INPUT_TYPE) -> T:
+        """Validate the data, ignoring unknown fields and then updating.
+
+        Ignoring unknown fields shows whether extra fields alone are the
+        problem, and salvages the parse if they are, without touching the
+        generated code the way the update does, so it is tried first.
+
+        Raises:
+            ValidationError: If the data does not validate after the update.
+        """
+        try:
+            return cls._validate(data)
+        except ValidationError:
+            sample = cls._save_failed_sample(data)
+
+        parsed = cls._validate_ignoring_extra(data)
+        if parsed is not None:
+            return parsed
+        return cls._validate_after_update(data, sample)
+
+    @classmethod
+    def _parse_allowing_missing(cls, data: INPUT_TYPE) -> T:
+        """Validate the data, ignoring unknown fields and then missing ones.
+
+        Unlike the levels below, the model is never updated: regenerating from
+        data the model has fields the data is missing would only widen the
+        generated model into accepting less.
+        """
+        try:
+            return cls._validate(data)
+        except ValidationError:
+            cls._save_failed_sample(data)
+
+        parsed = cls._validate_ignoring_extra(data)
+        if parsed is not None:
+            return parsed
+        return cls._validate_all_optional(data)
+
+    @classmethod
+    def _save_failed_sample(cls, data: INPUT_TYPE) -> Path:
+        """Log a failed validation and save the data as a new sample."""
+        logger.info("Validation failed: %s.", cls._model_name())
+        return cls.save_new_json_file(data)
+
+    @classmethod
+    def _validate_ignoring_extra(cls, data: INPUT_TYPE) -> T | None:
+        """Validate with `extra="forbid"` overridden on the generated models.
+
+        Returns:
+            The parsed model, or `None` if the data still fails to validate.
+        """
+        try:
+            with cls._extra_fields_allowed():
                 return cls._validate(data)
-            except ValidationError:
-                logger.info("Validation failed after updating: %s.", cls._model_name())
-                raise
+        except ValidationError:
+            logger.info(
+                "Validation failed allowing extra fields: %s.",
+                cls._model_name(),
+            )
+            return None
 
+    @classmethod
+    def _validate_after_update(cls, data: INPUT_TYPE, sample: Path) -> T:
+        """Update the model from `sample`, then validate the data again.
+
+        Raises:
+            ValidationError: If the data does not validate after the update.
+        """
+        cls._update_model(sample)
+        try:
+            return cls._validate(data)
+        except ValidationError:
+            logger.info("Validation failed after updating: %s.", cls._model_name())
+            raise
+
+    @classmethod
+    def _validate_all_optional(cls, data: INPUT_TYPE) -> T:
+        """Validate against a copy of the model with every field optional."""
         logger.warning(
             "Parsing %s with every field optional. Fields the data is missing "
             "will be None despite what their type hints say.",

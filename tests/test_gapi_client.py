@@ -134,13 +134,15 @@ class TestParseLevel:
         TestGapiClient.regenerate = False
         return TestGapiClient
 
-    def test_strict_does_not_update(self) -> None:
-        """STRICT raises on unknown data and leaves the saved samples alone."""
+    def test_strict_saves_without_updating(self) -> None:
+        """STRICT saves the failing data as a sample, then raises."""
         client = self._client()
         saved = client.json_files()
+        model = client._response_model  # noqa: SLF001 - Checking the model is untouched.
         with pytest.raises(ValidationError):
             client.parse({"unknown": "value"}, level=ParseLevel.STRICT)
-        assert client.json_files() == saved
+        assert len(client.json_files()) == len(saved) + 1
+        assert client._response_model is model  # noqa: SLF001 - As above.
         client.write_blank_model()
 
     def test_update_regenerates(self) -> None:
