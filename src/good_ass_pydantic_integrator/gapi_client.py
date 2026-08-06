@@ -89,13 +89,29 @@ class ParseLevel(IntEnum):
 type _OPTIONAL_MEMO = dict[type[BaseModel], type[BaseModel]]
 
 
-def _optional_annotation(annotation: Any, memo: _OPTIONAL_MEMO) -> Any:  # noqa: ANN401 - An annotation can be anything.
+def _optional_annotation(
+    annotation: Any,  # noqa: ANN401 - An annotation can be anything.
+    memo: _OPTIONAL_MEMO,
+    *,
+    in_union: bool = False,
+) -> Any:  # noqa: ANN401 - An annotation can be anything.
     """Rewrite an annotation so every model nested inside it is made optional.
 
     Containers are rebuilt from their rewritten arguments, so a model reached
     through a `list`, a union, a `dict` value or an `Annotated` is relaxed too.
     Anything that is not a model and holds no models is returned unchanged.
+
+    A bare `None` annotation is widened to `Any`. The generator types anything
+    it has only ever seen as null - including the items of an array that was
+    always empty - as `None`, which then rejects the first sample that does
+    carry a value. That is a missing part of the model in exactly the sense
+    this level exists for, so it is relaxed rather than raised. `None` as a
+    member of a union is left alone: it is there to make the union optional,
+    and widening it to `Any` would swallow the other members.
     """
+    if annotation is None or annotation is type(None):
+        return annotation if in_union else Any
+
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         return _optional_model(annotation, memo)
 
@@ -106,9 +122,17 @@ def _optional_annotation(annotation: Any, memo: _OPTIONAL_MEMO) -> Any:  # noqa:
     arguments = get_args(annotation)
     if origin is Annotated:
         annotated, *metadata = arguments
-        return Annotated[(_optional_annotation(annotated, memo), *metadata)]
+        return Annotated[
+            (_optional_annotation(annotated, memo, in_union=in_union), *metadata)
+        ]
 
-    rewritten = tuple(_optional_annotation(argument, memo) for argument in arguments)
+    # `in_union` marks only the direct members of a union, so it is set from
+    # this origin rather than passed down: the items of a `list[None]` reached
+    # through a union are still widened.
+    rewritten = tuple(
+        _optional_annotation(argument, memo, in_union=origin is Union)
+        for argument in arguments
+    )
     # `X | Y` cannot be rebuilt by subscripting its origin, unlike every other
     # container, so it is rebuilt through `Union` instead.
     if origin is Union:
