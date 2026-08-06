@@ -30,6 +30,12 @@ extend-exclude = ["tests/test_data"]
 
 [tool.ruff.lint]
 select = ["ALL"]  # Enable all linters.
+ignore = [
+  "CPY001",  # Copyright information is stored in LICENSE.
+  "FIX002",  # TODO comments are allowed.
+  "TD002",  # TODO comments do not need an author.
+  "TD003",  # TODO comments do not need an issue link.
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

@@ -3,12 +3,14 @@
 
 import json
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
+from pydantic import ValidationError
 
-from good_ass_pydantic_integrator import GAPIBaseModel, GAPIClient
+from good_ass_pydantic_integrator import GAPIBaseModel, GAPIClient, ParseLevel
 from good_ass_pydantic_integrator.gapi import GAPI
 from tests.constants import TEST_DATA
 
@@ -95,6 +97,163 @@ def test_gapi(
     assert "any" not in model_text, model_text
     for expected_line in expected_in_model:
         assert expected_line in stripped_lines, model_text
+
+
+class TestParseLevel:
+    """Test the recovery stages GAPIClient.parse runs through."""
+
+    @staticmethod
+    def _client(setup: INPUT_TYPE | None = None) -> type[GAPIClient[Any]]:
+        """Return a client whose model was generated from `setup`.
+
+        Defaults to a model that accepts `{"string": ...}`.
+        """
+        from tests.test_data.simple_gapi_model import SimpleGapiModel  # noqa: PLC0415
+
+        temp_dir = tempfile.TemporaryDirectory()
+
+        class TestGapiClient(GAPIClient[SimpleGapiModel]):
+            """Concrete implementation of GAPIClient for testing."""
+
+            _response_model = SimpleGapiModel
+            regenerate = True
+            """Turned off after setup so the stages that follow regeneration are
+            reachable with data the generator would otherwise absorb."""
+
+            @classmethod
+            def json_files_folder(cls) -> Path:
+                return Path(temp_dir.name)
+
+            @classmethod
+            def _update_model(cls, new_file_path: Path) -> None:
+                if cls.regenerate:
+                    super()._update_model(new_file_path)
+
+        TestGapiClient.write_blank_model()
+        TestGapiClient.parse(setup if setup is not None else {"string": "string"})
+        TestGapiClient.regenerate = False
+        return TestGapiClient
+
+    def test_strict_does_not_update(self) -> None:
+        """STRICT raises on unknown data and leaves the saved samples alone."""
+        client = self._client()
+        saved = client.json_files()
+        with pytest.raises(ValidationError):
+            client.parse({"unknown": "value"}, level=ParseLevel.STRICT)
+        assert client.json_files() == saved
+        client.write_blank_model()
+
+    def test_update_regenerates(self) -> None:
+        """UPDATE saves the data as a new sample and rebuilds the model from it."""
+        from tests.test_data.simple_gapi_model import SimpleGapiModel  # noqa: PLC0415
+
+        temp_dir = tempfile.TemporaryDirectory()
+
+        class TestGapiClient(GAPIClient[SimpleGapiModel]):
+            """Concrete implementation of GAPIClient for testing."""
+
+            _response_model = SimpleGapiModel
+
+            @classmethod
+            def json_files_folder(cls) -> Path:
+                return Path(temp_dir.name)
+
+        TestGapiClient.write_blank_model()
+        parsed = TestGapiClient.parse({"string": "string"})
+
+        assert len(TestGapiClient.json_files()) == 1
+        assert TestGapiClient.original_input(parsed) == {"string": "string"}
+        TestGapiClient.write_blank_model()
+
+    def test_allow_extra_ignores_unknown_fields(self) -> None:
+        """ALLOW_EXTRA parses data that only fails because of extra fields."""
+        client = self._client()
+        data = {"string": "string", "unknown": "value"}
+
+        with pytest.raises(ValidationError):
+            client.parse(data, level=ParseLevel.UPDATE)
+        parsed = client.parse(data, level=ParseLevel.ALLOW_EXTRA)
+
+        assert parsed.string == "string"
+        assert not hasattr(parsed, "unknown")
+        client.write_blank_model()
+
+    def test_extra_forbid_is_restored(self) -> None:
+        """The `extra="forbid"` override only lasts for the relaxed attempt."""
+        client = self._client()
+        client.parse(
+            {"string": "string", "unknown": "value"},
+            level=ParseLevel.ALLOW_EXTRA,
+        )
+
+        with pytest.raises(ValidationError):
+            client.parse(
+                {"string": "string", "unknown": "value"},
+                level=ParseLevel.STRICT,
+            )
+        client.write_blank_model()
+
+    def test_allow_extra_still_raises(self) -> None:
+        """ALLOW_EXTRA raises when extra fields are not what makes the data fail."""
+        client = self._client()
+        with pytest.raises(ValidationError):
+            client.parse({"string": [1, 2]}, level=ParseLevel.ALLOW_EXTRA)
+        client.write_blank_model()
+
+    def test_allow_missing_parses_partial_data(self) -> None:
+        """ALLOW_MISSING fills in missing fields, nested ones included, with None."""
+        client = self._client(
+            {
+                "top": "top",
+                "sub": {"name": "name", "when": "2000-01-01T00:00:00Z"},
+                "items": [{"id": 1}],
+            },
+        )
+        # Every field above is required, and this drops one at each level.
+        data = {"sub": {"when": "2000-01-01T00:00:00Z"}, "items": [{}]}
+
+        with pytest.raises(ValidationError):
+            client.parse(data, level=ParseLevel.ALLOW_EXTRA)
+        parsed = client.parse(data, level=ParseLevel.ALLOW_MISSING)
+
+        assert parsed.top is None
+        assert parsed.sub.name is None
+        assert parsed.items[0].id is None
+        # The value that is present is still validated and coerced as usual.
+        assert parsed.sub.when == datetime(2000, 1, 1, tzinfo=UTC)
+        client.write_blank_model()
+
+    def test_allow_missing_returns_the_response_model(self) -> None:
+        """The relaxed model is a subclass, so the return type is not a lie."""
+        client = self._client()
+        parsed = client.parse({}, level=ParseLevel.ALLOW_MISSING)
+
+        # Imported after the client regenerates the model, since regenerating
+        # reloads the module and replaces the class object.
+        from tests.test_data.simple_gapi_model import SimpleGapiModel  # noqa: PLC0415
+
+        assert isinstance(parsed, SimpleGapiModel)
+        assert client.original_input(parsed) == {}
+        client.write_blank_model()
+
+    def test_allow_missing_saves_the_data(self) -> None:
+        """Data that only parses when relaxed is still saved for later analysis."""
+        client = self._client()
+        saved = client.json_files()
+
+        client.parse({}, level=ParseLevel.ALLOW_MISSING)
+
+        assert len(client.json_files()) == len(saved) + 1
+        client.write_blank_model()
+
+    def test_allow_missing_leaves_the_response_model_strict(self) -> None:
+        """Relaxing happens on a throwaway subclass, not the response model."""
+        client = self._client()
+        client.parse({}, level=ParseLevel.ALLOW_MISSING)
+
+        with pytest.raises(ValidationError):
+            client.parse({}, level=ParseLevel.STRICT)
+        client.write_blank_model()
 
 
 def test_write_blank_model() -> None:

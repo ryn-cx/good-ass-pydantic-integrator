@@ -5,13 +5,26 @@ import importlib
 import inspect
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from enum import IntEnum
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+    overload,
+)
 
-from pydantic import BaseModel, RootModel, ValidationError
+from pydantic import BaseModel, RootModel, ValidationError, create_model
+from pydantic.fields import FieldInfo
 
 from good_ass_pydantic_integrator.base_model import (
     MODIFIER_CONTEXT_KEY,
@@ -35,6 +48,97 @@ logger = getLogger(__name__)
 _GAPI_MODEL_BASE_CLASS = f"good_ass_pydantic_integrator.{GAPIBaseModel.__qualname__}"
 """Public dotted path generated response models inherit from (via the package
 root, not the `base_model` submodule), so they carry raw input."""
+
+
+class ParseLevel(IntEnum):
+    """How far `GAPIClient.parse` may go to make invalid data parse.
+
+    Each level adds one recovery stage to the one below it, so a higher level
+    always tries everything a lower level does first.
+    """
+
+    STRICT = 1
+    """Validate once. A failure raises, leaving the model untouched."""
+
+    UPDATE = 2
+    """Also save the data as a new sample, update the model from it, and
+    validate again. This is the default."""
+
+    ALLOW_EXTRA = 3
+    """Also validate again with the generated models' `extra="forbid"`
+    overridden, so unknown fields are ignored rather than rejected."""
+
+    ALLOW_MISSING = 4
+    """Also validate a final time against a throwaway subclass of the response
+    model with every field, at every level of nesting, made optional. The data is
+    still validated, coerced and parsed into nested models as usual, but a field
+    the data no longer carries comes back as `None` even though its type hint
+    says it cannot be. The result is typed as the response model, so this hides a
+    real mismatch from callers: use it where a partial model beats no model."""
+
+
+type _OPTIONAL_MEMO = dict[type[BaseModel], type[BaseModel]]
+
+
+def _optional_annotation(annotation: Any, memo: _OPTIONAL_MEMO) -> Any:  # noqa: ANN401 - An annotation can be anything.
+    """Rewrite an annotation so every model nested inside it is made optional.
+
+    Containers are rebuilt from their rewritten arguments, so a model reached
+    through a `list`, a union, a `dict` value or an `Annotated` is relaxed too.
+    Anything that is not a model and holds no models is returned unchanged.
+    """
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return _optional_model(annotation, memo)
+
+    origin = get_origin(annotation)
+    if origin is None:
+        return annotation
+
+    arguments = get_args(annotation)
+    if origin is Annotated:
+        annotated, *metadata = arguments
+        return Annotated[(_optional_annotation(annotated, memo), *metadata)]
+
+    rewritten = tuple(_optional_annotation(argument, memo) for argument in arguments)
+    # `X | Y` cannot be rebuilt by subscripting its origin, unlike every other
+    # container, so it is rebuilt through `Union` instead.
+    if origin is Union:
+        return Union[rewritten]  # noqa: UP007 - Subscripted with a tuple of types.
+    return origin[rewritten]
+
+
+def _optional_model(model: type[BaseModel], memo: _OPTIONAL_MEMO) -> type[BaseModel]:
+    """Return a subclass of `model` with every field optional, recursively.
+
+    Fields keep their aliases, constraints and validators, so the data is parsed
+    exactly as it normally would be. Only two things change: a missing field
+    defaults to `None` instead of failing, and extra fields are ignored, since a
+    model that tolerates missing fields but not unknown ones would be a strange
+    half-measure at the point this is used.
+    """
+    cached = memo.get(model)
+    if cached is not None:
+        return cached
+
+    # Created empty and memoized before the fields are rewritten so a model that
+    # refers to itself, directly or through another model, resolves to this class
+    # instead of recursing forever.
+    optional = create_model(f"{model.__name__}Optional", __base__=model)
+    memo[model] = optional
+
+    for name, field in model.model_fields.items():
+        annotation = _optional_annotation(field.annotation, memo)
+        optional.model_fields[name] = FieldInfo.merge_field_infos(
+            field,
+            annotation=annotation | None,
+            default=None,
+        )
+
+    # A subclass gets its own `model_config` dict, so this leaves the response
+    # model, which the rest of the client keeps using, strict.
+    optional.model_config["extra"] = "ignore"
+    optional.model_rebuild(force=True)
+    return optional
 
 
 def _recover_raw_input(value: object) -> JSON_VALUE:
@@ -232,34 +336,130 @@ class GAPIClient[T: BaseModel]:
         return [GAPIClient.model_dump(item) for item in data]
 
     @classmethod
-    def parse(cls, data: INPUT_TYPE, *, update_model: bool = True) -> T:
-        """Parses data into a model.
+    def _validate(cls, data: INPUT_TYPE, model: type[T] | None = None) -> T:
+        """Validate data against the response model, or `model` if given.
+
+        The context is rebuilt per call because the base model pops the modifier
+        key out of it while validating.
+        """
+        return (model or cls._response_model).model_validate(
+            data,
+            context={MODIFIER_CONTEXT_KEY: cls.transform_input},
+        )
+
+    @classmethod
+    def _optional_response_model(cls) -> type[T]:
+        """Return a subclass of the response model with every field optional.
+
+        It is built on demand rather than cached because the response model is
+        replaced by a new class every time it is regenerated. The result is typed
+        as the response model, which it is a subclass of, even though a field the
+        data omits will hold `None` against what its type hint promises.
+        """
+        return cast("type[T]", _optional_model(cls._response_model, {}))
+
+    @classmethod
+    def _generated_models(cls) -> list[type[BaseModel]]:
+        """Return every model class defined in the response model's module."""
+        module = sys.modules[cls._response_model.__module__]
+        return [
+            value
+            for value in vars(module).values()
+            if isinstance(value, type)
+            and issubclass(value, BaseModel)
+            and value.__module__ == module.__name__
+        ]
+
+    @classmethod
+    @contextmanager
+    def _extra_fields_allowed(cls) -> Iterator[None]:
+        """Temporarily override `extra="forbid"` on the generated models.
+
+        Every model in the generated module is switched to `extra="ignore"` and
+        rebuilt for the duration of the block, then restored to exactly the
+        config it had before.
+        """
+        originals = [
+            (model, model.model_config.get("extra"))
+            for model in cls._generated_models()
+        ]
+        try:
+            for model, _ in originals:
+                model.model_config["extra"] = "ignore"
+                model.model_rebuild(force=True)
+            yield
+        finally:
+            for model, extra in originals:
+                if extra is None:
+                    model.model_config.pop("extra", None)
+                else:
+                    model.model_config["extra"] = extra
+                model.model_rebuild(force=True)
+
+    @classmethod
+    def parse(cls, data: INPUT_TYPE, *, level: ParseLevel = ParseLevel.UPDATE) -> T:
+        """Parses data into a model, recovering from failures up to `level`.
+
+        The stages, each only attempted when `level` allows it, are:
+
+        1. Validate the data as-is (`ParseLevel.STRICT`).
+        2. Save the data as a new sample, update the model from it, and validate
+           again (`ParseLevel.UPDATE`).
+        3. Validate again with `extra="forbid"` overridden on the generated
+           models, so unknown fields are ignored (`ParseLevel.ALLOW_EXTRA`).
+        4. Validate a final time against a copy of the model with every field
+           made optional (`ParseLevel.ALLOW_MISSING`).
+
+        Data that fails the first stage is saved as a new sample either way, so
+        anything that only parses at a later stage is on disk to look at later.
 
         Args:
             data: The data to parse.
-            update_model: Whether to update the model if parsing fails.
+            level: How far to go to make the data parse. The failure of the last
+                stage the level permits is raised.
 
         Returns:
             A model instance containing the parsed data.
+
+        Raises:
+            ValidationError: If the data still fails to validate after every
+                stage `level` permits.
         """
         try:
-            return cls._response_model.model_validate(
-                data,
-                context={MODIFIER_CONTEXT_KEY: cls.transform_input},
-            )
-        # If validation fails and updating is allowed, try automatically rebuilding
-        # and reloading the model using the new data, then validate again. A second
-        # failure raises an error that must be handled manually.
+            return cls._validate(data)
         except ValidationError:
-            if not update_model:
+            if level < ParseLevel.UPDATE:
                 raise
             logger.info("Validation failed: %s.", cls._model_name())
-            new_file = cls.save_new_json_file(data)
-            cls._update_model(new_file)
-            return cls._response_model.model_validate(
-                data,
-                context={MODIFIER_CONTEXT_KEY: cls.transform_input},
+            cls._update_model(cls.save_new_json_file(data))
+
+        try:
+            return cls._validate(data)
+        except ValidationError:
+            if level < ParseLevel.ALLOW_EXTRA:
+                raise
+            logger.info("Validation failed after updating: %s.", cls._model_name())
+
+        # The updated model still rejects the data, so the mismatch is not just a
+        # field the schema has not seen yet. Ignoring unknown fields shows whether
+        # extra fields alone are the problem, and salvages the parse if they are.
+        try:
+            with cls._extra_fields_allowed():
+                return cls._validate(data)
+        except ValidationError:
+            if level < ParseLevel.ALLOW_MISSING:
+                raise
+            logger.info(
+                "Validation failed allowing extra fields: %s.",
+                cls._model_name(),
             )
+
+        logger.warning(
+            "Parsing %s with every field optional. Fields the data is missing "
+            "will be None despite what their type hints say.",
+            cls._model_name(),
+        )
+        return cls._validate(data, cls._optional_response_model())
 
     @classmethod
     def rebuild_model(cls) -> None:
