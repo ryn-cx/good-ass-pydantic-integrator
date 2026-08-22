@@ -8,12 +8,12 @@ from pydantic import BaseModel, ValidationInfo, model_validator
 if TYPE_CHECKING:
     from pydantic import ModelWrapValidatorHandler
 
-    from good_ass_pydantic_integrator.constants import INPUT_TYPE
+    from good_ass_pydantic_integrator.constants import JSON_VALUE
 
-MODIFIER_CONTEXT_KEY = "gapi_modify"
-"""Validation-context key holding an optional callable that transforms the raw
-input before validation. A `GAPIClient` injects its `transform_input` hook here so
-the model is built from the transformed shape while the raw input is preserved."""
+RAW_INPUT_CONTEXT_KEY = "gapi_raw_input"
+"""Validation-context key holding what the caller handed the client, before it
+was read into the shape pydantic validates. A caller puts the downloaded text
+here so the root model records that rather than the parsed structure."""
 
 
 class GAPIBaseModel(BaseModel):
@@ -27,25 +27,28 @@ class GAPIBaseModel(BaseModel):
         handler: ModelWrapValidatorHandler[Self],
         info: ValidationInfo,
     ) -> Self:
-        # A GAPIClient may pass a data modifier through the validation context.
-        # Apply it once, at the root: pop it so nested models (validated inside
-        # handler) don't re-apply it. The *original*, unmodified input is what we
-        # record, so raw_input/original_input still reflect exactly what was
-        # downloaded even though the model is built from the transformed data.
+        # A caller passes what it was handed through the validation context.
+        # It is popped so only the root model records it and the models nested
+        # inside (validated inside handler) record the part of the parsed
+        # structure they were built from.
         original = data
         context = info.context
         if isinstance(context, dict):
-            modifier = context.pop(MODIFIER_CONTEXT_KEY, None)
-            if modifier is not None:
-                data = modifier(data)
+            given = context.pop(RAW_INPUT_CONTEXT_KEY, None)
+            if given is not None:
+                original = given
 
         model = handler(data)
         object.__setattr__(model, "_gapi_raw_input", original)
         return model
 
     @property
-    def raw_input(self) -> INPUT_TYPE:
+    def raw_input(self) -> JSON_VALUE:
         """The input used to create this model.
+
+        For a model validated with the raw input in its context, this is the
+        text the caller was handed. For a model nested inside one, it is the
+        part of the parsed structure that model was built from.
 
         Raises:
             ValueError: If the model was built via `model_construct`, which

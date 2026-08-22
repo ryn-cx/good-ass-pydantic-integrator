@@ -4,6 +4,7 @@
 
 import ast
 from dataclasses import dataclass, field
+from textwrap import dedent
 from typing import TypeGuard
 
 
@@ -121,6 +122,38 @@ _NARROW_STRING_TYPES = frozenset(
 )
 
 
+# Added to the root model so the input a response was validated from stays
+# reachable. A wrap validator is used because the instance the input belongs to
+# does not exist until the inner validation has run.
+_RAW_INPUT_SOURCE = '''
+_raw_input: Any = PrivateAttr(default=None)
+
+@model_validator(mode="wrap")
+@classmethod
+def _capture_raw_input(
+    cls,
+    data: Any,
+    handler: ModelWrapValidatorHandler[Self],
+) -> Self:
+    """Validate the model and keep the input it was built from."""
+    model = handler(data)
+    model._raw_input = data
+    return model
+
+@property
+def raw_input(self) -> Any:
+    """The input this model was validated from, as it was handed over."""
+    return self._raw_input
+'''
+
+# Module -> names the imports _RAW_INPUT_SOURCE needs.
+_RAW_INPUT_IMPORTS = {
+    "typing": ("Any", "Self"),
+    "pydantic": ("ModelWrapValidatorHandler", "PrivateAttr", "model_validator"),
+}
+
+
+# TODO: Validate
 class GAPICustomizer:
     """Compiles and applies customizations to generated models."""
 
@@ -211,11 +244,23 @@ class GAPICustomizer:
         """
         self.additional_imports.append(import_statement)
 
-    def apply_customizations(self, model_content: str) -> str:
+    # TODO: Validate
+    def apply_customizations(
+        self,
+        model_content: str,
+        *,
+        mark_untyped_lists: bool = True,
+        root_class_name: str | None = None,
+    ) -> str:
         """Apply all customizations to the model content.
 
         Args:
             model_content: The generated Pydantic model content as a string.
+            mark_untyped_lists: Rewrite `list[Any]` as `list[None]` so untyped
+                lists stand out.
+            root_class_name: Name of the root model, which gets the `raw_input`
+                property. If it is not one of the generated classes the last
+                class defined is used, which is the root model.
 
         Returns:
             The customized model content.
@@ -226,13 +271,22 @@ class GAPICustomizer:
             node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
         }
 
-        self._replace_untyped_lists(class_nodes)
+        if mark_untyped_lists:
+            self._replace_untyped_lists(class_nodes)
         pinned_union = self._apply_left_to_right_unions(class_nodes)
+        captured_raw_input = self._add_raw_input_capture(class_nodes, root_class_name)
         self._apply_replacement_fields(class_nodes)
         self._apply_replacement_types(class_nodes)
         self._apply_custom_serializers(class_nodes)
 
         additional_imports = list(self.additional_imports)
+        if captured_raw_input:
+            for module, names in _RAW_INPUT_IMPORTS.items():
+                missing = [n for n in names if not self._imports_name(tree, n)]
+                if missing:
+                    additional_imports.append(
+                        f"from {module} import {', '.join(missing)}",
+                    )
         if self.custom_serializers:
             additional_imports.append("from pydantic import field_serializer")
         # The left-to-right pass may introduce the first Field(...) call in a
@@ -243,6 +297,36 @@ class GAPICustomizer:
 
         ast.fix_missing_locations(tree)
         return ast.unparse(tree) + "\n"
+
+    # TODO: Validate
+    @staticmethod
+    def _add_raw_input_capture(
+        class_nodes: dict[str, ast.ClassDef],
+        root_class_name: str | None,
+    ) -> bool:
+        """Give the root model a `raw_input` property holding what it validated.
+
+        Args:
+            class_nodes: The generated classes, in the order they are defined.
+            root_class_name: Name of the root model. If it is not one of the
+                generated classes the last one defined is used.
+
+        Returns:
+            `True` if the root model was modified.
+        """
+        if not class_nodes:
+            return False
+
+        root_class = class_nodes.get(root_class_name or "")
+        if root_class is None:
+            root_class = list(class_nodes.values())[-1]
+
+        # A response with its own raw_input field keeps that field.
+        if GAPICustomizer._has_field(root_class, "raw_input"):
+            return False
+
+        root_class.body.extend(ast.parse(dedent(_RAW_INPUT_SOURCE)).body)
+        return True
 
     def _apply_replacement_fields(self, class_nodes: dict[str, ast.ClassDef]) -> None:
         """Replace matching fields in class bodies with custom definitions."""

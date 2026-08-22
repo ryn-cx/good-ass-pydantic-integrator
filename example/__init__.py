@@ -1,2 +1,0 @@
-# TODO: Validate
-"""GAPIClient example."""

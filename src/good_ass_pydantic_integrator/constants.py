@@ -31,3 +31,24 @@ from pydantic import ConfigDict
 class {class_name}(GAPIBaseModel):
     model_config = ConfigDict(extra="forbid")
 """
+
+MODELS_TEMPLATE = '''"""{class_name}, required to a type checker and all-optional at runtime.
+
+A type checker reads the required model, so every field carries the type and
+the requiredness the schema recorded. At runtime the all-optional copy is imported
+instead, so a response that has drifted still parses and a field the data is
+missing is None despite what its type hint says.
+"""
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from {required_module} import (
+{names}    )
+else:
+    from {optional_module} import (
+{names}    )
+
+__all__ = [
+{exports}]
+'''

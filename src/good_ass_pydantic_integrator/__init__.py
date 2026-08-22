@@ -8,7 +8,5 @@ from good_ass_pydantic_integrator.customizer import CustomSerializer as CustomSe
 from good_ass_pydantic_integrator.customizer import ReplacementField as ReplacementField
 from good_ass_pydantic_integrator.customizer import ReplacementType as ReplacementType
 from good_ass_pydantic_integrator.gapi import GAPI as GAPI
-from good_ass_pydantic_integrator.gapi_client import GAPIClient as GAPIClient
-from good_ass_pydantic_integrator.gapi_client import ParseLevel as ParseLevel
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())

@@ -2,8 +2,8 @@
 # Good Ass Pydantic Integrator (GAPI)
 
 GAPI is a python library that generates Pydantic v2 based models from raw JSON data (or
-JSON schemas), lets you customize the result, and provides a client that automatically
-regenerates models when the schema changes.
+JSON schemas), lets you customize the result, and provides a client that validates
+responses against those models.
 
 ## Features
 
@@ -12,9 +12,10 @@ regenerates models when the schema changes.
   `IPv4Address`, `IPv6Address`, `UUID`, etc.
 - Customize generated models with field replacements, type replacements, custom
   `@field_serializer` methods, and extra imports.
-- `GAPIClient` base class that validates responses, rebuilds the model on
-  validation failure, and caches the raw input so responses dump back exactly
-  as they came in.
+- `GAPIClient` base class that validates responses against the generated model
+  or its all-optional copy, and caches the raw input so responses dump back
+  exactly as they came in. It only ever reads the saved samples; writing them is
+  the caller's, and models are only written by an explicit `rebuild_model`.
 
 ## Installation
 
@@ -38,7 +39,7 @@ gapi.add_object_from_dict(
         "tags": ["admin", "early-access"],
     }
 )
-print(gapi.get_pydantic_model_content())
+print(gapi.get_required_models_content())
 ```
 
 Output:
@@ -81,7 +82,7 @@ gapi.add_objects_from_folder(Path("responses/"))
 gapi.add_schema_from_file(Path("json_schema.json"))
 
 gapi.write_json_schema_to_file(Path("out/api_response.json"))
-gapi.write_pydantic_model_to_file(Path("out/api_response.py"))
+gapi.write_required_models_to_file(Path("out/api_response.py"))
 ```
 
 ## Customizing generated models
@@ -106,7 +107,7 @@ customizer.add_additional_import("from typing import Literal")
 
 gapi = GAPI(customizer=customizer)
 gapi.add_object_from_dict({"status": "active"})
-print(gapi.get_pydantic_model_content())
+print(gapi.get_required_models_content())
 ```
 
 Output:
@@ -141,7 +142,7 @@ customizer.add_replacement_field(
 
 gapi = GAPI(customizer=customizer)
 gapi.add_object_from_dict({"TotalCount": "1"})
-print(gapi.get_pydantic_model_content())
+print(gapi.get_required_models_content())
 ```
 
 Output:
@@ -176,7 +177,7 @@ customizer.add_custom_serializer(
 
 gapi = GAPI(class_name="User", customizer=customizer)
 gapi.add_object_from_dict({"created_at": "2025-01-01T12:00:00Z"})
-print(gapi.get_pydantic_model_content())
+print(gapi.get_required_models_content())
 ```
 
 Output:
@@ -196,10 +197,16 @@ class User(BaseModel):
 ```
 
 
-## `GAPIClient` - Automatically updating models
+## `GAPIClient` - Generated models and the client that validates against them
 
-`GAPIClient` is a generic base class for creating an automatically updating Pydantic
-model.
+`GAPIClient` is a generic base class for creating a Pydantic model that is
+generated from the responses it has been given.
+
+Every model is generated twice. `user_model.py` holds the model as the data
+actually looked, with `extra="forbid"` and required fields; `user_model_optional.py`
+holds the same classes with `extra="ignore"` and every field optional, for parsing
+data that has drifted from the model. Which one `parse` uses is the `optional`
+argument, and `parse_or_optional` tries the first and falls back to the second.
 
 Models generated for a `GAPIClient` inherit from `GAPIBaseModel` (a `BaseModel`
 subclass) instead of `pydantic.BaseModel`. `GAPIBaseModel` records the raw input it
@@ -218,15 +225,30 @@ A runnable example is available in the [`example/`](example/) directory:
 ### `GAPIClient` operations
 
 ```python
-# Validate a response and upate model if necessary.
+# Validate a response. `parse` takes the downloaded text and reads it with
+# `transform_input`, which is `json.loads` unless a subclass overrides it. Text
+# the model no longer fits raises; nothing is written or regenerated here.
 user = UserClient.parse(response)
 
+# Validate against the all-optional copy of the model, skipping every check on
+# which fields have to be there.
+user = UserClient.parse(response, optional=True)
+
+# Validate against the model, falling back to the all-optional copy. The
+# fallback logs "Parse failed for <identifier>" and writes nothing, so that
+# warning is the only record that the response drifted.
+user = UserClient.parse_or_optional(response, "Users/1")
+
+# Rewrite the all-optional copy from the current schema.
+UserClient.write_optional_model()
+
 # Return one or many models' raw input exactly as it was parsed. Only models
-# produced by parse() can be dumped.
+# produced by parse() can be dumped, and what comes back is the text itself.
 UserClient.dump_response(user)
 UserClient.dump_response([user, user])
 
-# Force a full model rebuild from every saved sample.
+# Rebuild the model and its all-optional copy from every saved sample. This is
+# the only thing that writes a model, and it is run deliberately.
 UserClient.rebuild_model()
 
 # Reset the model file to a blank schema.
