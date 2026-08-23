@@ -32,9 +32,9 @@ class {class_name}(GAPIBaseModel):
     model_config = ConfigDict(extra="forbid")
 """
 
-MODELS_TEMPLATE = '''"""{class_name}, required to a type checker and all-optional at runtime.
+MODELS_TEMPLATE = '''"""{class_name}, strict to a type checker, all-optional at runtime.
 
-A type checker reads the required model, so every field carries the type and
+A type checker reads the strict model, so every field carries the type and
 the requiredness the schema recorded. At runtime the all-optional copy is imported
 instead, so a response that has drifted still parses and a field the data is
 missing is None despite what its type hint says.
@@ -42,13 +42,24 @@ missing is None despite what its type hint says.
 
 from typing import TYPE_CHECKING
 
+from good_ass_pydantic_integrator import load
+
+from {optional_module} import {class_name} as OptionalModel
+from {strict_module} import {class_name} as StrictModel
+
 if TYPE_CHECKING:
-    from {required_module} import (
+    from {strict_module} import (
 {names}    )
 else:
     from {optional_module} import (
 {names}    )
 
 __all__ = [
-{exports}]
+{exports}    "model_validate_json",
+]
+
+
+def model_validate_json(data: str | bytes | object, log_id: str) -> {class_name}:
+    """Read a downloaded file into {class_name}."""
+    return load.model_validate_json(StrictModel, OptionalModel, data, log_id)
 '''

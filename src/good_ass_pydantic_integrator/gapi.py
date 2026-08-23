@@ -50,7 +50,7 @@ class GAPI:
         self.base_class = base_class
 
         self.cached_json_schema: str | None = None
-        self.cached_required_models: str | None = None
+        self.cached_strict_models: str | None = None
         self.cached_optional_models: str | None = None
 
     def add_schema_from_file(self, schema_path: Path) -> None:
@@ -76,7 +76,7 @@ class GAPI:
             schema_dict: The JSON schema as a dictionary.
         """
         self.cached_json_schema = None
-        self.cached_required_models = None
+        self.cached_strict_models = None
         self.cached_optional_models = None
 
         self.builder.add_schema(schema_dict)
@@ -157,7 +157,7 @@ class GAPI:
             data: The JSON data as a dict or list.
         """
         self.cached_json_schema = None
-        self.cached_required_models = None
+        self.cached_strict_models = None
         self.cached_optional_models = None
 
         if self.convert:
@@ -228,13 +228,13 @@ class GAPI:
     # TODO: Validate
     def _model_class_names(self) -> list[str]:
         """Return the names of every class in the generated model, sorted."""
-        tree = ast.parse(self.get_required_models_content())
+        tree = ast.parse(self.get_strict_models_content())
         return sorted(node.name for node in tree.body if isinstance(node, ast.ClassDef))
 
     # TODO: Validate
     def get_models_content(
         self,
-        required_module: str = ".required_models",
+        strict_module: str = ".strict_models",
         optional_module: str = ".optional_models",
     ) -> str:
         """Generate a module that picks a model to use depending on the situation.
@@ -244,7 +244,7 @@ class GAPI:
         recorded them and a response that has drifted still parses.
 
         Args:
-            required_module: Module the required model is defined in.
+            strict_module: Module the required model is defined in.
             optional_module: Module the all-optional model is defined in.
 
         Returns:
@@ -253,7 +253,7 @@ class GAPI:
         class_names = self._model_class_names()
         return MODELS_TEMPLATE.format(
             class_name=self.class_name,
-            required_module=required_module,
+            strict_module=strict_module,
             optional_module=optional_module,
             names="".join(f"        {name},\n" for name in class_names),
             exports="".join(f'    "{name}",\n' for name in class_names),
@@ -263,19 +263,19 @@ class GAPI:
     def write_models_to_file(
         self,
         output_path: Path,
-        required_module: str = ".required_models",
+        strict_module: str = ".strict_models",
         optional_module: str = ".optional_models",
     ) -> None:
         """Generate and write the module that picks a model to use.
 
         Args:
             output_path: Path to write the module to.
-            required_module: Module the required model is defined in.
+            strict_module: Module the required model is defined in.
             optional_module: Module the all-optional model is defined in.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
-            self.get_models_content(required_module, optional_module),
+            self.get_models_content(strict_module, optional_module),
         )
 
     # TODO: Validate
@@ -289,17 +289,17 @@ class GAPI:
         output_path.write_text(self.get_optional_models_content())
 
     # TODO: Validate
-    def get_required_models_content(self) -> str:
+    def get_strict_models_content(self) -> str:
         """Generate the Pydantic model code as a string, caching the result.
 
         Returns:
             The generated Pydantic model source code.
         """
-        if self.cached_required_models is None:
-            self.cached_required_models = self._generate_model(
+        if self.cached_strict_models is None:
+            self.cached_strict_models = self._generate_model(
                 self.get_json_schema_content(),
             )
-        return self.cached_required_models
+        return self.cached_strict_models
 
     # TODO: Validate
     def _generate_model(
@@ -356,11 +356,11 @@ class GAPI:
         )
 
     # TODO: Validate
-    def write_required_models_to_file(self, output_path: Path) -> None:
+    def write_strict_models_to_file(self, output_path: Path) -> None:
         """Generate and write the Pydantic model to a file.
 
         Args:
             output_path: Path to write the Pydantic model file to.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(self.get_required_models_content())
+        output_path.write_text(self.get_strict_models_content())

@@ -39,7 +39,7 @@ gapi.add_object_from_dict(
         "tags": ["admin", "early-access"],
     }
 )
-print(gapi.get_required_models_content())
+print(gapi.get_strict_models_content())
 ```
 
 Output:
@@ -82,7 +82,7 @@ gapi.add_objects_from_folder(Path("responses/"))
 gapi.add_schema_from_file(Path("json_schema.json"))
 
 gapi.write_json_schema_to_file(Path("out/api_response.json"))
-gapi.write_required_models_to_file(Path("out/api_response.py"))
+gapi.write_strict_models_to_file(Path("out/api_response.py"))
 ```
 
 ## Customizing generated models
@@ -107,7 +107,7 @@ customizer.add_additional_import("from typing import Literal")
 
 gapi = GAPI(customizer=customizer)
 gapi.add_object_from_dict({"status": "active"})
-print(gapi.get_required_models_content())
+print(gapi.get_strict_models_content())
 ```
 
 Output:
@@ -142,7 +142,7 @@ customizer.add_replacement_field(
 
 gapi = GAPI(customizer=customizer)
 gapi.add_object_from_dict({"TotalCount": "1"})
-print(gapi.get_required_models_content())
+print(gapi.get_strict_models_content())
 ```
 
 Output:
@@ -177,7 +177,7 @@ customizer.add_custom_serializer(
 
 gapi = GAPI(class_name="User", customizer=customizer)
 gapi.add_object_from_dict({"created_at": "2025-01-01T12:00:00Z"})
-print(gapi.get_required_models_content())
+print(gapi.get_strict_models_content())
 ```
 
 Output:

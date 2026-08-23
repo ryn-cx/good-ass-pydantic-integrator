@@ -36,7 +36,7 @@ class TestAddSchema:
         """Test adding schema from file, dict, or string."""
         gapi = GAPI()
         getattr(gapi, method_name)(input_arg)
-        assert gapi.get_required_models_content() == MODEL_PATH.read_text()
+        assert gapi.get_strict_models_content() == MODEL_PATH.read_text()
 
 
 class TestAddObject:
@@ -59,7 +59,7 @@ class TestAddObject:
         """Test adding object from file, dict, or string."""
         gapi = GAPI()
         getattr(gapi, method_name)(input_arg)
-        assert gapi.get_required_models_content() == MODEL_PATH.read_text()
+        assert gapi.get_strict_models_content() == MODEL_PATH.read_text()
 
 
 class TestReplaceField:
@@ -75,7 +75,7 @@ class TestReplaceField:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"integer_that_is_stored_as_a_string": "1"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert "    integer_that_is_stored_as_a_string: int" in lines
 
     def test_add_replacement_field_without_field_name_prefix(self) -> None:
@@ -88,7 +88,7 @@ class TestReplaceField:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"integer_that_is_stored_as_a_string": "1"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert "    integer_that_is_stored_as_a_string: int" in lines
 
     def test_add_replacement_field_over_multiple_lines(self) -> None:
@@ -104,7 +104,7 @@ class TestReplaceField:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"IntegerThatIsStoredAsAString": "1"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert (
             "    integer_that_is_stored_as_a_string: int ="
             " Field(..., alias='IntegerThatIsStoredAsAString')" in lines
@@ -124,7 +124,7 @@ class TestReplaceType:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"integer_that_is_stored_as_a_string": "1"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert "    integer_that_is_stored_as_a_string: int" in lines
 
     def test_add_replacement_type_preserves_alias(self) -> None:
@@ -137,7 +137,7 @@ class TestReplaceType:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"IntegerThatIsStoredAsAString": "1"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert (
             "    integer_that_is_stored_as_a_string: int ="
             " Field(..., alias='IntegerThatIsStoredAsAString')" in lines
@@ -157,7 +157,7 @@ class TestAddSerializers:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"string": "string"})
-        content = gapi.get_required_models_content()
+        content = gapi.get_strict_models_content()
         assert (
             """    @field_serializer('string')
     def serialize_string(self, value: str) -> str:
@@ -180,7 +180,7 @@ class TestAddSerializers:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"string": "string", "string2": "string2"})
-        content = gapi.get_required_models_content()
+        content = gapi.get_strict_models_content()
         assert (
             """    @field_serializer('string')
     def serialize_string(self, value: str) -> str:
@@ -216,7 +216,7 @@ class TestAddSerializers:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"string": "string"})
-        content = gapi.get_required_models_content()
+        content = gapi.get_strict_models_content()
         assert (
             """    @field_serializer('string')
     def serialize_string(self, value: str) -> str:
@@ -244,7 +244,7 @@ class TestAddSerializers:
                 },
             },
         )
-        content = gapi.get_required_models_content()
+        content = gapi.get_strict_models_content()
         assert (
             """    @field_serializer('string')
     def serialize_string(self, value: str) -> str:
@@ -268,7 +268,7 @@ class TestAddImports:
         )
         gapi = GAPI(customizer=customizer)
         gapi.add_object_from_dict({"string": "string"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert lines[0] == "from pydantic import NaiveDatetime"
 
 
@@ -279,7 +279,7 @@ class TestReplaceUntypedList:
         """Test that an empty list is typed as list[None]."""
         gapi = GAPI()
         gapi.add_object_from_dict({"items": []})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert "    items: list[None]" in lines
 
 
@@ -290,7 +290,7 @@ class TestClassName:
         """Test that class_name sets the root model class name."""
         gapi = GAPI(class_name="CustomModel")
         gapi.add_object_from_dict({"key": "value"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert "class CustomModel(BaseModel):" in lines
         assert "class Model(BaseModel):" not in lines
 
@@ -303,7 +303,7 @@ class TestRuntimeAnnotationImports:
         sample = {"x_api_key": "3e4666bf-d5e5-4aa7-b8ce-cefe41c7568a"}
         gapi = GAPI(class_name="SearchModel")
         gapi.add_object_from_dict(sample)
-        content = gapi.get_required_models_content()
+        content = gapi.get_strict_models_content()
 
         assert "from uuid import UUID" in content
         assert "TYPE_CHECKING" not in content
@@ -328,7 +328,7 @@ class TestNarrowStringUnions:
         gapi = GAPI(class_name="SearchModel")
         gapi.add_object_from_dict({"target_id": "05eb6a8e-90ed-4947-8c0b-e6536cbddd5f"})
         gapi.add_object_from_dict({"target_id": "laliga-on-espn-plus"})
-        content = gapi.get_required_models_content()
+        content = gapi.get_strict_models_content()
 
         assert "target_id: UUID | str = Field(union_mode='left_to_right')" in content
 
@@ -350,14 +350,14 @@ class TestDatetimeAwareness:
         """A datetime without an offset is typed as `NaiveDatetime`."""
         gapi = GAPI()
         gapi.add_object_from_dict({"validity_end_time": "2026-12-31T23:59:59"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert "    validity_end_time: NaiveDatetime" in lines
 
     def test_aware_datetime_is_aware(self) -> None:
         """A datetime with an offset is typed as `AwareDatetime`."""
         gapi = GAPI()
         gapi.add_object_from_dict({"validity_end_time": "2026-12-31T23:59:59Z"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert "    validity_end_time: AwareDatetime" in lines
 
     @pytest.mark.parametrize(
@@ -373,7 +373,7 @@ class TestDatetimeAwareness:
         gapi = GAPI(class_name="ContentModel")
         for value in values:
             gapi.add_object_from_dict({"validity_end_time": value})
-        content = gapi.get_required_models_content()
+        content = gapi.get_strict_models_content()
 
         namespace: dict[str, Any] = {}
         exec(content, namespace)  # noqa: S102
@@ -395,7 +395,7 @@ class TestFalseConvertFlag:
         """Test that convert=False keeps date-like strings as strings."""
         gapi = GAPI(convert=False)
         gapi.add_object_from_dict({"date_field": "2000-01-01"})
-        lines = gapi.get_required_models_content().splitlines()
+        lines = gapi.get_strict_models_content().splitlines()
         assert "    date_field: str" in lines
 
 
@@ -437,33 +437,33 @@ class TestWriteToFile:
         gapi.write_json_schema_to_file(output)
         assert output.read_text() == gapi.get_json_schema_content() + "\n"
 
-    def test_write_required_models_to_file(self, tmp_path: Path) -> None:
+    def test_write_strict_models_to_file(self, tmp_path: Path) -> None:
         """Test writing Pydantic model to a file."""
         gapi = GAPI()
         gapi.add_object_from_dict({"key": "value"})
         output = tmp_path / "output" / "model.py"
-        gapi.write_required_models_to_file(output)
-        assert output.read_text() == gapi.get_required_models_content()
+        gapi.write_strict_models_to_file(output)
+        assert output.read_text() == gapi.get_strict_models_content()
 
 
 class TestCaching:
     """Test caching behavior of GAPI."""
 
     def test_required_models_are_cached(self) -> None:
-        """Test that calling get_required_models_content twice returns same result."""
+        """Test that calling get_strict_models_content twice returns same result."""
         gapi = GAPI()
         gapi.add_object_from_dict({"key": "value"})
-        first = gapi.get_required_models_content()
-        second = gapi.get_required_models_content()
+        first = gapi.get_strict_models_content()
+        second = gapi.get_strict_models_content()
         assert first is second
 
     def test_cache_invalidated_on_new_object(self) -> None:
         """Test that adding a new object invalidates the cache."""
         gapi = GAPI()
         gapi.add_object_from_dict({"key": "value"})
-        first = gapi.get_required_models_content()
+        first = gapi.get_strict_models_content()
         gapi.add_object_from_dict({"new_key": 123})
-        second = gapi.get_required_models_content()
+        second = gapi.get_strict_models_content()
         assert first is not second
         assert "    new_key: int | None = None" in second.splitlines()
 
@@ -471,9 +471,9 @@ class TestCaching:
         """Test that adding a new schema invalidates the cache."""
         gapi = GAPI()
         gapi.add_object_from_dict({"key": "value"})
-        first = gapi.get_required_models_content()
+        first = gapi.get_strict_models_content()
         gapi.add_schema_from_dict(json.loads(SCHEMA_PATH.read_text()))
-        second = gapi.get_required_models_content()
+        second = gapi.get_strict_models_content()
         assert first is not second
 
 
@@ -489,7 +489,7 @@ class TestRawInput:
         gapi.add_object_from_dict(sample)
 
         namespace: dict[str, Any] = {}
-        exec(gapi.get_required_models_content(), namespace)  # noqa: S102
+        exec(gapi.get_strict_models_content(), namespace)  # noqa: S102
         model = namespace["ArtistModel"].model_validate(sample)
 
         assert model.raw_input == sample
@@ -514,7 +514,7 @@ class TestRawInput:
         """A response with its own raw_input field keeps that field."""
         gapi = GAPI(class_name="ArtistModel")
         gapi.add_object_from_dict({"raw_input": "value"})
-        content = gapi.get_required_models_content()
+        content = gapi.get_strict_models_content()
 
         assert "    raw_input: str" in content.splitlines()
         assert "PrivateAttr" not in content
