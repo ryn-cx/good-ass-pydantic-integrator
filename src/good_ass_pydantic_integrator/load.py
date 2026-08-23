@@ -43,5 +43,4 @@ def model_validate_json[T: BaseModel](
         return _validate(strict_model, data)
     except ValidationError:
         logger.warning("Parse failed for %s", log_id)
-        logger.debug("Parse failure detail for %s", log_id, exc_info=True)
         return _validate(optional_model, data)
