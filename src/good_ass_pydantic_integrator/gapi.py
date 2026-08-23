@@ -59,7 +59,7 @@ class GAPI:
         Args:
             schema_path: Path to the JSON schema file.
         """
-        self.add_schema_from_string(schema_path.read_text())
+        self.add_schema_from_string(schema_path.read_text(encoding="utf-8"))
 
     def add_schema_from_string(self, schema_string: str) -> None:
         """Load a JSON schema string into the SchemaBuilder.
@@ -139,7 +139,7 @@ class GAPI:
         Args:
             file_path: Path to the JSON file.
         """
-        self.add_object_from_string(file_path.read_text())
+        self.add_object_from_string(file_path.read_text(encoding="utf-8"))
 
     def add_object_from_string(self, data_string: str) -> None:
         """Load a JSON object from a string into the SchemaBuilder.
@@ -185,7 +185,10 @@ class GAPI:
             output_path: Path to write the JSON schema file to.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(self.get_json_schema_content() + "\n")
+        output_path.write_text(
+            self.get_json_schema_content() + "\n",
+            encoding="utf-8",
+        )
 
     # TODO: Validate
     @classmethod
@@ -276,6 +279,7 @@ class GAPI:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             self.get_models_content(strict_module, optional_module),
+            encoding="utf-8",
         )
 
     # TODO: Validate
@@ -286,7 +290,7 @@ class GAPI:
             output_path: Path to write the Pydantic model file to.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(self.get_optional_models_content())
+        output_path.write_text(self.get_optional_models_content(), encoding="utf-8")
 
     # TODO: Validate
     def get_strict_models_content(self) -> str:
@@ -346,7 +350,7 @@ class GAPI:
                 disable_future_imports=True,
             )
 
-            content = temp_path.read_text()
+            content = temp_path.read_text(encoding="utf-8")
             temp_path.unlink()
 
         return self._customizer.apply_customizations(
@@ -363,4 +367,4 @@ class GAPI:
             output_path: Path to write the Pydantic model file to.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(self.get_strict_models_content())
+        output_path.write_text(self.get_strict_models_content(), encoding="utf-8")

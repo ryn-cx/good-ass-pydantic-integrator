@@ -58,7 +58,7 @@ def model_directory(package_path: Path, model_name: str) -> Path:
         FileNotFoundError: If no package under `package_path` defines that model.
     """
     for models_file in package_path.rglob("strict_models.py"):
-        if f"class {model_name}(" in models_file.read_text():
+        if f"class {model_name}(" in models_file.read_text(encoding="utf-8"):
             return models_file.parent
     msg = f"No package under {package_path} defines {model_name}"
     raise FileNotFoundError(msg)
@@ -82,7 +82,7 @@ def responses_in(
     A walk is recorded as the list of pages it was served, and each page is read
     with the same model, so each is its own response here.
     """
-    parsed = read(recording.read_text())
+    parsed = read(recording.read_text(encoding="utf-8"))
     is_walk = recording.parent.parent.name == "Multipages"
     if is_walk and isinstance(parsed, list):
         return list(parsed)
@@ -183,7 +183,7 @@ def model_names(models_file: Path) -> set[str]:
     """Return the name of every model class a generated file defines."""
     return {
         node.name
-        for node in ast.parse(models_file.read_text()).body
+        for node in ast.parse(models_file.read_text(encoding="utf-8")).body
         if isinstance(node, ast.ClassDef)
     }
 
@@ -204,10 +204,10 @@ def drop_names_missing_from_optional_models(directory: Path) -> None:
         return
     kept_lines = [
         line
-        for line in models_file.read_text().splitlines(keepends=True)
+        for line in models_file.read_text(encoding="utf-8").splitlines(keepends=True)
         if line.strip().rstrip(",").strip('"') not in dropped
     ]
-    models_file.write_text("".join(kept_lines))
+    models_file.write_text("".join(kept_lines), encoding="utf-8")
 
 
 # TODO: Validate
