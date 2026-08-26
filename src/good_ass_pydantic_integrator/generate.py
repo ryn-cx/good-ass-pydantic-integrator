@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from good_ass_pydantic_integrator.constants import JSON_VALUE
+    from good_ass_pydantic_integrator.customizer import GAPICustomizer
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +217,7 @@ def generate_model(
     package_path: Path,
     model_name: str,
     read: Callable[[str], JSON_VALUE] = json.loads,
+    customizer: GAPICustomizer | None = None,
 ) -> None:
     """Write the schema and models for one model from its recorded responses.
 
@@ -226,8 +228,10 @@ def generate_model(
             about to rewrite is what stops the package importing.
         model_name: The model class name, e.g. `SeriesModel`.
         read: Turns a recording into the object the model reads.
+        customizer: Changes applied to the generated models, for a model that
+            needs something the recordings cannot say.
     """
-    gapi = GAPI(model_name)
+    gapi = GAPI(model_name, customizer=customizer)
     responses = list(recorded_responses(files_path, model_name, read))
     if not responses:
         logger.warning("Nothing recorded for %s, leaving it alone.", model_name)

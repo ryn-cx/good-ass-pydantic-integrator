@@ -5,6 +5,7 @@ import logging
 
 from good_ass_pydantic_integrator.base_model import GAPIBaseModel as GAPIBaseModel
 from good_ass_pydantic_integrator.customizer import CustomSerializer as CustomSerializer
+from good_ass_pydantic_integrator.customizer import GAPICustomizer as GAPICustomizer
 from good_ass_pydantic_integrator.customizer import ReplacementField as ReplacementField
 from good_ass_pydantic_integrator.customizer import ReplacementType as ReplacementType
 from good_ass_pydantic_integrator.gapi import GAPI as GAPI
