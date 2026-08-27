@@ -102,7 +102,7 @@ class CustomSerializer:
 
 
 # Pydantic type names datamodel-code-generator emits for the formatted-string
-# strategies (uuid, date-time, date, time, duration, ipv4, ipv6). Each is a
+# strategies: uuid, date-time, date, time, duration, ipv4, ipv6. Each is a
 # stricter parse of a value that is also a valid str. When such a type is
 # unioned with a plain str, pydantic's default *smart* union resolves the
 # value to str (the lossless, no-coercion match) regardless of member order,
@@ -273,6 +273,7 @@ class GAPICustomizer:
 
         if mark_untyped_lists:
             self._replace_untyped_lists(class_nodes)
+        deferred_build = self._apply_deferred_build(class_nodes)
         pinned_union = self._apply_left_to_right_unions(class_nodes)
         captured_raw_input = self._add_raw_input_capture(class_nodes, root_class_name)
         self._apply_replacement_fields(class_nodes)
@@ -293,6 +294,8 @@ class GAPICustomizer:
         # model that had no aliases and therefore no Field import.
         if pinned_union and not self._imports_name(tree, "Field"):
             additional_imports.append("from pydantic import Field")
+        if deferred_build and not self._imports_name(tree, "ConfigDict"):
+            additional_imports.append("from pydantic import ConfigDict")
         self._apply_additional_imports(tree, additional_imports)
 
         ast.fix_missing_locations(tree)
@@ -426,6 +429,46 @@ class GAPICustomizer:
                 for child in ast.walk(node.annotation):
                     if GAPICustomizer._is_untyped_list(child):
                         child.slice = ast.Constant(value=None)
+
+    @staticmethod
+    def _apply_deferred_build(class_nodes: dict[str, ast.ClassDef]) -> bool:
+        """Defer building every generated model until it is first used."""
+        for class_node in class_nodes.values():
+            config = next(
+                (
+                    node
+                    for node in class_node.body
+                    if isinstance(node, ast.Assign)
+                    and any(
+                        isinstance(target, ast.Name) and target.id == "model_config"
+                        for target in node.targets
+                    )
+                ),
+                None,
+            )
+
+            if config is None:
+                first = class_node.body[0] if class_node.body else None
+                docstring = (
+                    isinstance(first, ast.Expr)
+                    and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)
+                )
+                class_node.body.insert(
+                    1 if docstring else 0,
+                    ast.parse("model_config = ConfigDict(defer_build=True)").body[0],
+                )
+                continue
+
+            if not isinstance(config.value, ast.Call):
+                continue
+            if any(keyword.arg == "defer_build" for keyword in config.value.keywords):
+                continue
+            config.value.keywords.append(
+                ast.keyword(arg="defer_build", value=ast.Constant(value=True)),
+            )
+
+        return bool(class_nodes)
 
     @staticmethod
     def _imports_name(tree: ast.Module, name: str) -> bool:
