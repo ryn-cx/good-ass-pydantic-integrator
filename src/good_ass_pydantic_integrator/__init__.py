@@ -15,6 +15,9 @@ from good_ass_pydantic_integrator.generate import (
 from good_ass_pydantic_integrator.generate import (
     recorded_model_names as recorded_model_names,
 )
+from good_ass_pydantic_integrator.generate import (
+    redundant_recordings as redundant_recordings,
+)
 from good_ass_pydantic_integrator.load import (
     model_validate_json as model_validate_json,
 )
