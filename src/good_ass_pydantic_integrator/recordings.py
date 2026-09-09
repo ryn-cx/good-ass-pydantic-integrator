@@ -69,13 +69,14 @@ class RecordingId[ClientT](BaseModel):
     # TODO: Validate
     def parts(self) -> list[Any]:
         """Return what this id is made of, in the order the fields are declared."""
-        return [getattr(self, field) for field in type(self).model_fields]
+        written = self.model_dump(mode="json")
+        return [written[field] for field in type(self).model_fields]
 
     # TODO: Validate
     def written_entry(self) -> Any:  # noqa: ANN401 - An entry is any JSON.
         """Return this id as the ids file writes it."""
         if self.written_as_fields:
-            return self.model_dump(exclude_unset=True)
+            return self.model_dump(mode="json", exclude_unset=True)
         parts = self.parts()
         return parts[0] if len(parts) == 1 else parts
 
