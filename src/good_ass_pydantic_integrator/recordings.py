@@ -13,6 +13,7 @@ import logging
 import pkgutil
 import re
 from dataclasses import dataclass
+from functools import partial
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
@@ -24,7 +25,7 @@ from good_ass_pydantic_integrator.generate import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from pathlib import Path
     from types import ModuleType
 
@@ -43,8 +44,8 @@ RECORDING_SUFFIX = ".json"
 
 
 # TODO: Validate
-class RecordingId(BaseModel):
-    """One id a response is downloaded with.
+class RecordingId[ClientT](BaseModel):
+    """One id a response is downloaded with, and how to download it.
 
     A model names the parts of its id, and the ids file writes each id as one
     value, or as a list of them in the order the fields are declared.
@@ -80,6 +81,12 @@ class RecordingId(BaseModel):
         A model whose recordings are not named after their id overrides this.
         """
         return "_".join(str(part) for part in self.parts() if part is not None)
+
+    # TODO: Validate
+    def download(self, client: ClientT) -> str:
+        """Download the response for this id."""
+        msg = f"{type(self).__name__} does not say how it is downloaded."
+        raise NotImplementedError(msg)
 
 
 # TODO: Validate
@@ -138,13 +145,51 @@ def download_if_missing(
 
 
 # TODO: Validate
+def download_missing[ClientT](
+    paths: GeneratorPaths,
+    model_name: str,
+    ids: Iterable[RecordingId[ClientT]],
+    client: ClientT,
+    suffix: str = RECORDING_SUFFIX,
+) -> None:
+    """Download the responses a model does not have recorded yet."""
+    for id_ in ids:
+        download_if_missing(
+            paths,
+            model_name,
+            id_.recording_name(),
+            partial(id_.download, client),
+            suffix,
+        )
+
+
+# TODO: Validate
+def download_named_missing[ClientT](
+    paths: GeneratorPaths,
+    model_name: str,
+    ids: Mapping[str, RecordingId[ClientT]],
+    client: ClientT,
+    suffix: str = RECORDING_SUFFIX,
+) -> None:
+    """Download the responses a model does not have recorded yet, by name."""
+    for name, id_ in ids.items():
+        download_if_missing(
+            paths,
+            model_name,
+            name,
+            partial(id_.download, client),
+            suffix,
+        )
+
+
+# TODO: Validate
 def read_entries(paths: GeneratorPaths, model_name: str) -> Entries:
     """Return the ids file for a model, as it is written."""
     return json.loads(paths.ids_file_path(model_name).read_text(encoding="utf-8"))
 
 
 # TODO: Validate
-def load_ids[IdT: RecordingId](
+def load_ids[IdT: RecordingId[Any]](
     paths: GeneratorPaths,
     model_name: str,
     id_type: type[IdT],
@@ -164,7 +209,7 @@ def load_ids[IdT: RecordingId](
 
 
 # TODO: Validate
-def load_named_ids[IdT: RecordingId](
+def load_named_ids[IdT: RecordingId[Any]](
     paths: GeneratorPaths,
     model_name: str,
     id_type: type[IdT],
@@ -195,7 +240,7 @@ def write_entries(paths: GeneratorPaths, model_name: str, entries: Entries) -> N
 def save_ids(
     paths: GeneratorPaths,
     model_name: str,
-    ids: Sequence[RecordingId],
+    ids: Sequence[RecordingId[Any]],
 ) -> None:
     """Write the ids a model's responses are recorded for."""
     write_entries(paths, model_name, [id_.written_entry() for id_ in ids])
@@ -205,7 +250,7 @@ def save_ids(
 def save_named_ids(
     paths: GeneratorPaths,
     model_name: str,
-    ids: Mapping[str, RecordingId],
+    ids: Mapping[str, RecordingId[Any]],
 ) -> None:
     """Write the ids a model's responses are recorded for, keyed by name."""
     write_entries(
@@ -216,7 +261,7 @@ def save_named_ids(
 
 
 # TODO: Validate
-def drop_redundant_recordings[IdT: RecordingId](
+def drop_redundant_recordings[IdT: RecordingId[Any]](
     paths: GeneratorPaths,
     model_name: str,
     id_type: type[IdT],
@@ -287,7 +332,7 @@ def drop_redundant_recordings[IdT: RecordingId](
 
 
 # TODO: Validate
-def rebuild_model[IdT: RecordingId](
+def rebuild_model[IdT: RecordingId[Any]](
     paths: GeneratorPaths,
     model_name: str,
     id_type: type[IdT],
