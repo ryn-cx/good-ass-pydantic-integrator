@@ -141,7 +141,9 @@ def download_if_missing(
         return
     logger.info("Downloading %s/%s.", model_name, name)
     recorded_path.parent.mkdir(parents=True, exist_ok=True)
-    recorded_path.write_text(download(), encoding="utf-8")
+    partial_path = recorded_path.with_name(recorded_path.name + ".partial")
+    partial_path.write_text(download(), encoding="utf-8")
+    partial_path.replace(recorded_path)
 
 
 # TODO: Validate
