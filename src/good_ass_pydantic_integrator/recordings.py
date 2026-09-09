@@ -12,10 +12,11 @@ import json
 import logging
 import pkgutil
 import re
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from good_ass_pydantic_integrator.generate import (
     generate_model,
@@ -23,7 +24,7 @@ from good_ass_pydantic_integrator.generate import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
     from types import ModuleType
 
@@ -31,20 +32,54 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-type Id = str | int | tuple[str | int | None, ...] | None
-"""One id, which is what a response is downloaded with."""
-
-type Ids = Sequence[Id] | Mapping[str, Id]
-"""The ids a model's responses are recorded for.
-
-A mapping is what a model whose recordings are named uses, keyed by that name.
-"""
+type Entries = list[JSON_VALUE] | dict[str, JSON_VALUE]
+"""The ids file, which writes one entry per response, named or in order."""
 
 MODULE_PREFIX = "_generate_"
 """What the name of a module that rebuilds a model starts with."""
 
 RECORDING_SUFFIX = ".json"
 """What a recorded response is named with."""
+
+
+# TODO: Validate
+class RecordingId(BaseModel):
+    """One id a response is downloaded with.
+
+    A model names the parts of its id, and the ids file writes each id as one
+    value, or as a list of them in the order the fields are declared.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # TODO: Validate
+    @model_validator(mode="before")
+    @classmethod
+    def read_entry(cls, entry: Any) -> Any:  # noqa: ANN401 - An entry is any JSON.
+        """Read an id written as one value or a list into the fields it names."""
+        if isinstance(entry, dict):
+            return entry
+        parts = entry if isinstance(entry, list) else [entry]
+        return dict(zip(cls.model_fields, parts, strict=False))
+
+    # TODO: Validate
+    def parts(self) -> list[Any]:
+        """Return what this id is made of, in the order the fields are declared."""
+        return [getattr(self, field) for field in type(self).model_fields]
+
+    # TODO: Validate
+    def written_entry(self) -> Any:  # noqa: ANN401 - An entry is any JSON.
+        """Return this id as the ids file writes it."""
+        parts = self.parts()
+        return parts[0] if len(parts) == 1 else parts
+
+    # TODO: Validate
+    def recording_name(self) -> str:
+        """Return the name the response for this id is recorded under.
+
+        A model whose recordings are not named after their id overrides this.
+        """
+        return "_".join(str(part) for part in self.parts() if part is not None)
 
 
 # TODO: Validate
@@ -103,52 +138,89 @@ def download_if_missing(
 
 
 # TODO: Validate
-def read_id(entry: object) -> Id:
-    """Return one id as the generator reads it.
-
-    An id written as a list is read back as a tuple, which is how an id made of
-    more than one value is given.
-    """
-    return tuple(entry) if isinstance(entry, list) else entry
+def read_entries(paths: GeneratorPaths, model_name: str) -> Entries:
+    """Return the ids file for a model, as it is written."""
+    return json.loads(paths.ids_file_path(model_name).read_text(encoding="utf-8"))
 
 
 # TODO: Validate
-def written_id(id_: Id) -> object:
-    """Return one id as the file holds it."""
-    return list(id_) if isinstance(id_, tuple) else id_
+def load_ids[IdT: RecordingId](
+    paths: GeneratorPaths,
+    model_name: str,
+    id_type: type[IdT],
+) -> list[IdT]:
+    """Return the ids a model's responses are downloaded with.
 
-
-# TODO: Validate
-def load_ids(paths: GeneratorPaths, model_name: str) -> Ids:
-    """Return the ids a model's responses are recorded for.
-
-    A file holding an object is read back as a mapping of the name each response
-    is recorded under to the id it is downloaded with.
+    Args:
+        paths: Where the ids live.
+        model_name: The model class name, e.g. `SeriesModel`.
+        id_type: The model one id is read into.
     """
-    entries = json.loads(paths.ids_file_path(model_name).read_text(encoding="utf-8"))
+    entries = read_entries(paths, model_name)
     if isinstance(entries, dict):
-        return {name: read_id(entry) for name, entry in entries.items()}
-    return [read_id(entry) for entry in entries]
+        msg = f"The ids for {model_name} are named, so load_named_ids reads them."
+        raise TypeError(msg)
+    return [id_type.model_validate(entry) for entry in entries]
 
 
 # TODO: Validate
-def save_ids(paths: GeneratorPaths, model_name: str, ids: Ids) -> None:
-    """Write the ids a model's responses are recorded for."""
+def load_named_ids[IdT: RecordingId](
+    paths: GeneratorPaths,
+    model_name: str,
+    id_type: type[IdT],
+) -> dict[str, IdT]:
+    """Return the ids a model's responses are downloaded with, keyed by name.
+
+    Args:
+        paths: Where the ids live.
+        model_name: The model class name, e.g. `SeriesModel`.
+        id_type: The model one id is read into.
+    """
+    entries = read_entries(paths, model_name)
+    if not isinstance(entries, dict):
+        msg = f"The ids for {model_name} are not named, so load_ids reads them."
+        raise TypeError(msg)
+    return {name: id_type.model_validate(entry) for name, entry in entries.items()}
+
+
+# TODO: Validate
+def write_entries(paths: GeneratorPaths, model_name: str, entries: Entries) -> None:
+    """Write the ids file for a model."""
     ids_file_path = paths.ids_file_path(model_name)
     ids_file_path.parent.mkdir(parents=True, exist_ok=True)
-    if isinstance(ids, Mapping):
-        entries: object = {name: written_id(id_) for name, id_ in ids.items()}
-    else:
-        entries = [written_id(id_) for id_ in ids]
     ids_file_path.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
 
 
 # TODO: Validate
-def drop_redundant_recordings(
+def save_ids(
     paths: GeneratorPaths,
     model_name: str,
+    ids: Sequence[RecordingId],
+) -> None:
+    """Write the ids a model's responses are recorded for."""
+    write_entries(paths, model_name, [id_.written_entry() for id_ in ids])
+
+
+# TODO: Validate
+def save_named_ids(
+    paths: GeneratorPaths,
+    model_name: str,
+    ids: Mapping[str, RecordingId],
+) -> None:
+    """Write the ids a model's responses are recorded for, keyed by name."""
+    write_entries(
+        paths,
+        model_name,
+        {name: id_.written_entry() for name, id_ in ids.items()},
+    )
+
+
+# TODO: Validate
+def drop_redundant_recordings[IdT: RecordingId](
+    paths: GeneratorPaths,
+    model_name: str,
+    id_type: type[IdT],
     read: Callable[[str], JSON_VALUE] = json.loads,
-    name_of: Callable[[Id], str] = str,
     suffix: str = RECORDING_SUFFIX,
 ) -> None:
     """Delete the recordings a model does not need, and the ids they came from.
@@ -159,19 +231,20 @@ def drop_redundant_recordings(
     Args:
         paths: Where the recordings and ids live.
         model_name: The model class name, e.g. `SeriesModel`.
+        id_type: The model one id is read into.
         read: Turns a recording into the object the model reads.
-        name_of: Returns the name an id is recorded under, for an id that is not
-            the name itself.
         suffix: What a recorded response is named with.
     """
     if not paths.ids_file_path(model_name).exists():
         return
 
-    ids = load_ids(paths, model_name)
-    if isinstance(ids, Mapping):
-        recorded_names = {sanitized_file_name(name) for name in ids}
+    entries = read_entries(paths, model_name)
+    if isinstance(entries, dict):
+        named_ids = load_named_ids(paths, model_name, id_type)
+        recorded_names = {sanitized_file_name(name) for name in named_ids}
     else:
-        recorded_names = {sanitized_file_name(name_of(id_)) for id_ in ids}
+        ids = load_ids(paths, model_name, id_type)
+        recorded_names = {sanitized_file_name(id_.recording_name()) for id_ in ids}
 
     redundant = [
         recording
@@ -191,23 +264,34 @@ def drop_redundant_recordings(
         recording.unlink()
 
     dropped = {recording.stem for recording in redundant}
-    if isinstance(ids, Mapping):
-        kept: Ids = {
-            name: id_
-            for name, id_ in ids.items()
-            if sanitized_file_name(name) not in dropped
-        }
+    if isinstance(entries, dict):
+        save_named_ids(
+            paths,
+            model_name,
+            {
+                name: id_
+                for name, id_ in named_ids.items()
+                if sanitized_file_name(name) not in dropped
+            },
+        )
     else:
-        kept = [id_ for id_ in ids if sanitized_file_name(name_of(id_)) not in dropped]
-    save_ids(paths, model_name, kept)
+        save_ids(
+            paths,
+            model_name,
+            [
+                id_
+                for id_ in ids
+                if sanitized_file_name(id_.recording_name()) not in dropped
+            ],
+        )
 
 
 # TODO: Validate
-def rebuild_model(
+def rebuild_model[IdT: RecordingId](
     paths: GeneratorPaths,
     model_name: str,
+    id_type: type[IdT],
     read: Callable[[str], JSON_VALUE] = json.loads,
-    name_of: Callable[[Id], str] = str,
     suffix: str = RECORDING_SUFFIX,
 ) -> None:
     """Rewrite a model from its recordings, then drop the ones it does not need.
@@ -216,7 +300,7 @@ def rebuild_model(
     `drop_redundant_recordings` itself, since the customizer does not fit here.
     """
     generate_model(paths.files_path, paths.package_path, model_name, read)
-    drop_redundant_recordings(paths, model_name, read, name_of, suffix)
+    drop_redundant_recordings(paths, model_name, id_type, read, suffix)
 
 
 # TODO: Validate
