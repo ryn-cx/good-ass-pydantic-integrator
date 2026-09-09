@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from functools import partial
 from importlib import import_module
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -53,6 +53,9 @@ class RecordingId[ClientT](BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    written_as_fields: ClassVar[bool] = False
+    """Whether the ids file writes this id as an object naming its fields."""
+
     # TODO: Validate
     @model_validator(mode="before")
     @classmethod
@@ -71,6 +74,8 @@ class RecordingId[ClientT](BaseModel):
     # TODO: Validate
     def written_entry(self) -> Any:  # noqa: ANN401 - An entry is any JSON.
         """Return this id as the ids file writes it."""
+        if self.written_as_fields:
+            return self.model_dump()
         parts = self.parts()
         return parts[0] if len(parts) == 1 else parts
 
