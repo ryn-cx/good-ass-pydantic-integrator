@@ -75,7 +75,7 @@ class RecordingId[ClientT](BaseModel):
     def written_entry(self) -> Any:  # noqa: ANN401 - An entry is any JSON.
         """Return this id as the ids file writes it."""
         if self.written_as_fields:
-            return self.model_dump()
+            return self.model_dump(exclude_unset=True)
         parts = self.parts()
         return parts[0] if len(parts) == 1 else parts
 
